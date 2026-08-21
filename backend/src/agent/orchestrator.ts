@@ -36,6 +36,14 @@ const defaultAdapters: ModelAdapters = {
 };
 
 /**
+ * Persistence is best-effort for the live agent. A database outage must not
+ * crash an otherwise usable in-memory negotiation or evaluation run.
+ */
+function persistInBackground(promise: Promise<unknown>): void {
+  void promise.catch(() => undefined);
+}
+
+/**
  * Updates the state of a session and refreshes its timestamp.
  */
 function setSessionState(session: NegotiationSession, state: AgentState): void {
@@ -146,9 +154,9 @@ export function createSession(
   store.events.set(sessionId, []);
   store.messages.set(sessionId, []);
 
-  void persistSession(session);
+  persistInBackground(persistSession(session));
   for (const vendor of vendors) {
-    void persistVendor(vendor);
+    persistInBackground(persistVendor(vendor));
   }
 
   return session;

@@ -64,10 +64,12 @@ export async function resolveReview(requestId, decision) {
 
 /**
  * Triggers the 20-case evaluation test suite.
+ * The deterministic adapter is the safe default for demos and offline QA.
  */
-export async function runEvaluation() {
+export async function runEvaluation(mode = 'test-adapter') {
   return apiRequest('/api/evaluation/run', {
     method: 'POST',
+    body: JSON.stringify({ mode }),
   });
 }
 

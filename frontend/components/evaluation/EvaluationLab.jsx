@@ -19,13 +19,14 @@ export function EvaluationLab() {
   const [run, setRun] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [executionMode, setExecutionMode] = useState('test-adapter');
 
   async function handleExecute() {
     setIsExecuting(true);
     setErrorMessage('');
 
     try {
-      const result = await runEvaluation();
+      const result = await runEvaluation(executionMode);
       setRun(result.run);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Evaluation run failed.');
@@ -56,22 +57,36 @@ export function EvaluationLab() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="primary-button"
-          disabled={isExecuting}
-          onClick={handleExecute}
-        >
-          {isExecuting ? (
-            <>
-              <RefreshCw size={16} className="spin" /> Running suite…
-            </>
-          ) : (
-            <>
-              Run evaluation <ArrowRight size={16} />
-            </>
-          )}
-        </button>
+        <div className="evaluation-actions">
+          <label className="evaluation-mode">
+            <span>Execution mode</span>
+            <select
+              value={executionMode}
+              disabled={isExecuting}
+              onChange={(event) => setExecutionMode(event.target.value)}
+            >
+              <option value="test-adapter">Offline test adapter</option>
+              <option value="provider">Real providers</option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="primary-button"
+            disabled={isExecuting}
+            onClick={handleExecute}
+          >
+            {isExecuting ? (
+              <>
+                <RefreshCw size={16} className="spin" /> Running suite…
+              </>
+            ) : (
+              <>
+                Run evaluation <ArrowRight size={16} />
+              </>
+            )}
+          </button>
+        </div>
       </section>
 
       {errorMessage && <div className="form-error">{errorMessage}</div>}

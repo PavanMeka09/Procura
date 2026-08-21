@@ -21,7 +21,7 @@ import { config, assertProductionConfig } from './utils/config';
 import { ApplicationError } from './errors';
 import { findEvaluation, persistRequest } from './db/repository';
 
-const server = fastify({ logger: true });
+const server = fastify({ logger: false });
 
 // Register content parsers and CORS
 server.addContentTypeParser(
@@ -64,7 +64,9 @@ const procurementBodySchema = z
   .strict();
 
 const decisionSchema = z.enum(['approve', 'reject', 'stop']);
-const evaluationBodySchema = z.object({ mode: z.literal('provider').optional() }).default({});
+const evaluationBodySchema = z.object({
+  mode: z.enum(['provider', 'test-adapter']).default('test-adapter'),
+});
 
 /**
  * Sanitizes vendor internal simulation behavior before returning session to client.
