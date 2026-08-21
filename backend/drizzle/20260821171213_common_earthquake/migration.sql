@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "negotiation_sessions_request_id_idx" ON "negotiation_sessions" ("request_id");

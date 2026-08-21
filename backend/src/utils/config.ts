@@ -9,6 +9,7 @@ const parsePricing = () => {
 
 export const config = {
   databaseUrl: process.env.DATABASE_URL,
+  apiKey: process.env.PROCURA_API_KEY,
   port: Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 3001),
   clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:3000',
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
@@ -22,6 +23,11 @@ export const config = {
 };
 
 export function assertProductionConfig() {
-  const missing = ['DATABASE_URL', 'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_API_KEY'].filter((name) => !process.env[name]);
+  const missing = ['DATABASE_URL', 'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_API_KEY', 'PROCURA_API_KEY'].filter((name) => !process.env[name]);
   if (missing.length) throw new Error(`Missing required production configuration: ${missing.join(', ')}`);
+}
+
+export function assertSeedConfig() {
+  const missing = ['DATABASE_URL', 'GOOGLE_GENERATIVE_AI_API_KEY'].filter((name) => !process.env[name]);
+  if (missing.length) throw new Error(`Missing required seed configuration: ${missing.join(', ')}`);
 }

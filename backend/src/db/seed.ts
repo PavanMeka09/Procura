@@ -3,7 +3,7 @@ import { embed } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { seededVendors } from '../vendors/simulator';
 import { now } from '../domain';
-import { assertProductionConfig, config } from '../utils/config';
+import { assertSeedConfig, config } from '../utils/config';
 import { persistEvaluationCase, persistKnowledgeChunk, persistKnowledgeDocument, persistPolicyRule, persistRequest, persistVendor } from './repository';
 
 const canonicalRequest = { id: '00000000-0000-4000-8000-000000000001', rawRequest: 'Canonical seeded procurement request', item: 'business laptops', quantity: 500, targetUnitPrice: 55000, maximumUnitPrice: 57000, deliveryDays: 21, minimumWarrantyMonths: 24, maximumAdvancePaymentPercent: 20, status: 'SEEDED', createdAt: now() };
@@ -26,7 +26,7 @@ const rules = [
 ];
 
 async function seed() {
-  assertProductionConfig();
+  assertSeedConfig();
   const google = createGoogleGenerativeAI({ apiKey: config.googleApiKey! });
   await persistRequest(canonicalRequest);
   for (const vendor of seededVendors(canonicalRequest.id)) await persistVendor(vendor);

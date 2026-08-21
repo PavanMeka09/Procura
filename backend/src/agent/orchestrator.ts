@@ -12,6 +12,7 @@ import { config } from '../utils/config';
 import { shouldStop } from './stop-conditions';
 
 const setState = (session: NegotiationSession, state: AgentState) => { session.currentState = state; session.updatedAt = now(); };
+const isStopped = (session: NegotiationSession) => session.currentState === 'STOPPED';
 const emit = (session: NegotiationSession, type: AgentEvent['type'], state: AgentState, message: string, metadata: Record<string, unknown> = {}) => { setState(session, state); appendEvent({ id: createId(), sessionId: session.id, type, state, message, metadata, createdAt: now() }); };
 const addMessage = (session: NegotiationSession, vendorId: string, sender: 'AGENT' | 'VENDOR' | 'SYSTEM', content: string, roundNumber: number, messageType: string) => appendMessage(session.id, { id: createId(), vendorId, sender, content, roundNumber, messageType, createdAt: now() });
 
@@ -31,13 +32,14 @@ const defaultAdapters: ModelAdapters = { executionMode: 'provider', negotiator: 
 const recordModelRuns = (session: NegotiationSession, runs: NegotiationSession['modelRuns'], round: number) => { for (const run of runs) { const pricing = config.modelPricing?.[run.model]; const estimatedCost = run.estimatedCost !== undefined ? run.estimatedCost : pricing && run.usage ? ((run.usage.inputTokens ?? 0) / 1_000_000) * (pricing.inputPerMillion ?? 0) + ((run.usage.outputTokens ?? 0) / 1_000_000) * (pricing.outputPerMillion ?? 0) : null; const stored = { ...run, estimatedCost, id: run.id ?? createId(), requestId: session.requestId, sessionId: session.id, promptVersion: run.promptVersion ?? 'v1', roundNumber: run.roundNumber ?? round }; session.modelRuns.push(stored); void persistModelRun(stored); } };
 const recordTool = (session: NegotiationSession, tool: Omit<NonNullable<NegotiationSession['toolExecutions'][number]>, 'id' | 'requestId' | 'sessionId' | 'createdAt'>) => { const stored = { ...tool, id: createId(), requestId: session.requestId, sessionId: session.id, createdAt: now() }; session.toolExecutions.push(stored); void persistToolExecution(stored); };
 
-const bestOffer = (offers: Offer[]) => offers.filter((offer) => offer.policyStatus === 'PASS').sort((a, b) => a.unitPrice - b.unitPrice || a.advancePaymentPercent - b.advancePaymentPercent)[0] ?? offers.sort((a, b) => a.unitPrice - b.unitPrice)[0] ?? null;
+const bestOffer = (offers: Offer[]) => offers.filter((offer) => offer.policyStatus === 'PASS').sort((a, b) => a.unitPrice - b.unitPrice || a.advancePaymentPercent - b.advancePaymentPercent)[0] ?? [...offers].sort((a, b) => a.unitPrice - b.unitPrice)[0] ?? null;
 
 const safeCounter = (session: NegotiationSession, offer: Offer): AgentAction => ({ type: 'SEND_COUNTER', vendorId: offer.vendorId, message: `Please revise to ₹${Math.min(session.maximumUnitPrice, Math.max(session.targetUnitPrice ?? 55000, offer.unitPrice - 2500)).toLocaleString('en-IN')} per unit with ${session.maximumDeliveryDays}-day delivery, ${session.minimumWarrantyMonths}-month warranty, and ${session.maximumAdvancePaymentPercent}% advance payment.`, proposedTerms: { unitPrice: Math.min(session.maximumUnitPrice, Math.max(session.targetUnitPrice ?? 55000, offer.unitPrice - 2500)), deliveryDays: session.maximumDeliveryDays, warrantyMonths: session.minimumWarrantyMonths, advancePaymentPercent: session.maximumAdvancePaymentPercent, paymentTerms: '20% advance, balance on delivery' }, rationale: 'The first proposal was blocked; recomputing against the hard policy limits.' });
 
 async function getOfferWithRecovery(session: NegotiationSession, vendor: Vendor, round: number): Promise<Offer | null> {
   let failureConsumed = false;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (session.currentState === 'STOPPED') return null;
     try {
       const toolStarted = Date.now();
       let toolSucceeded = false;
@@ -56,14 +58,16 @@ async function negotiateVendor(session: NegotiationSession, vendor: Vendor, adap
   session.currentVendorId = vendor.id;
   let blockedOnce = false;
   for (let round = 1; round <= Math.min(3, config.maxRounds); round += 1) {
+    if (isStopped(session)) return;
     session.currentRound = Math.max(session.currentRound, round);
     const offer = await getOfferWithRecovery(session, vendor, round);
+    if (isStopped(session)) return;
     if (!offer) continue;
-    upsertOffer(offer); session.offers.push(offer);
+    upsertOffer(offer);
     emit(session, 'OFFER_PARSED', 'OFFER_ANALYSIS', `${vendor.name} offer parsed at ₹${offer.unitPrice.toLocaleString('en-IN')} / unit.`, { vendorId: vendor.id, offerId: offer.id, round, unitPrice: offer.unitPrice, deliveryDays: offer.deliveryDays, warrantyMonths: offer.warrantyMonths, advancePaymentPercent: offer.advancePaymentPercent });
-    const currentPolicy = validateOffer(offer, session.originalRequest); offer.policyStatus = currentPolicy.decision; session.policyResult = currentPolicy; session.currentBestOffer = bestOffer(session.offers);
+    const currentPolicy = validateOffer(offer, session.originalRequest); offer.policyStatus = currentPolicy.decision; upsertOffer(offer); session.policyResult = currentPolicy; session.currentBestOffer = bestOffer(session.offers);
     emit(session, 'NEGOTIATION_PLAN_CREATED', 'NEGOTIATION_PLANNING', `Planning next action using offer economics, policy evidence, and negotiation history.`, { vendorId: vendor.id, round, currentBestOffer: session.currentBestOffer?.id ?? null });
-    const proposed = await adapters.negotiator.proposeAction(session, offer); recordModelRuns(session, proposed.runs, round); if (proposed.fallbackUsed) emit(session, 'FALLBACK_ACTIVATED', 'ACTION_PROPOSED', 'Primary negotiator failed; DeepSeek fallback proposed the next action.', { model: config.fallbackModel });
+    const proposed = await adapters.negotiator.proposeAction(session, offer); recordModelRuns(session, proposed.runs, round); if (isStopped(session)) return; if (proposed.fallbackUsed) emit(session, 'FALLBACK_ACTIVATED', 'ACTION_PROPOSED', 'Primary negotiator failed; DeepSeek fallback proposed the next action.', { model: config.fallbackModel });
     const targetVendorId = proposed.action.type === 'SEND_COUNTER' || proposed.action.type === 'ACCEPT' ? proposed.action.vendorId : null;
     if (targetVendorId && (targetVendorId !== vendor.id || !session.vendors.some((item) => item.id === targetVendorId))) { session.policyResult = { decision: 'BLOCK', violations: ['UNKNOWN_VENDOR'], warnings: [], evidence: ['Actions must target the vendor currently under negotiation.'] }; emit(session, 'ACTION_BLOCKED', 'POLICY_REVIEW', 'Action blocked because it targeted an unknown vendor.', { vendorId: targetVendorId }); continue; }
     session.pendingAction = proposed.action;
@@ -71,8 +75,9 @@ async function negotiateVendor(session: NegotiationSession, vendor: Vendor, adap
     emit(session, 'CRITIC_STARTED', 'CRITIC_REVIEW', 'Independent critic is reviewing the proposed action.', { vendorId: vendor.id, round });
     let criticResult;
     try { const critic = await adapters.critic.critique(session, offer, proposed.action); criticResult = critic.result; recordModelRuns(session, [critic.run], round); } catch { session.riskScore = 0.82; session.humanReview = { id: createId(), reason: 'Independent critic unavailable after retry; consequential action is held for human review.', proposedAction: proposed.action, evidence: ['Critic failure is fail-closed; approval requires a successful revalidation.'], status: 'PENDING', createdAt: now() }; store.reviews.set(session.humanReview.id, session.humanReview); emit(session, 'HUMAN_REVIEW_REQUIRED', 'HUMAN_REVIEW', session.humanReview.reason, { reviewId: session.humanReview.id }); session.stopReason = session.humanReview.reason; return; }
-    session.criticResult = criticResult; offer.criticStatus = criticResult.decision; emit(session, 'CRITIC_RESULT', 'CRITIC_REVIEW', `Independent critic: ${criticResult.decision}.`, { decision: criticResult.decision, confidence: criticResult.confidence, concerns: criticResult.concerns, policyViolations: criticResult.policyViolations });
-    const policyResult = validateAction(proposed.action, session.originalRequest, offer); session.policyResult = policyResult; offer.policyStatus = policyResult.decision; session.riskScore = Math.min(0.95, Math.max(0.08, (1 - criticResult.confidence) + (policyResult.decision === 'BLOCK' ? 0.48 : 0.12))); emit(session, 'POLICY_RESULT', 'POLICY_REVIEW', `Deterministic policy: ${policyResult.decision}.`, { decision: policyResult.decision, violations: policyResult.violations, warnings: policyResult.warnings, evidence: policyResult.evidence });
+    if (isStopped(session)) return;
+    session.criticResult = criticResult; offer.criticStatus = criticResult.decision; upsertOffer(offer); emit(session, 'CRITIC_RESULT', 'CRITIC_REVIEW', `Independent critic: ${criticResult.decision}.`, { decision: criticResult.decision, confidence: criticResult.confidence, concerns: criticResult.concerns, policyViolations: criticResult.policyViolations, evidence: criticResult.evidence });
+    const policyResult = validateAction(proposed.action, session.originalRequest, offer); session.policyResult = policyResult; offer.policyStatus = policyResult.decision; upsertOffer(offer); session.riskScore = Math.min(0.95, Math.max(0.08, (1 - criticResult.confidence) + (policyResult.decision === 'BLOCK' ? 0.48 : 0.12))); emit(session, 'POLICY_RESULT', 'POLICY_REVIEW', `Deterministic policy: ${policyResult.decision}.`, { decision: policyResult.decision, violations: policyResult.violations, warnings: policyResult.warnings, evidence: policyResult.evidence });
     const gate = evaluateAction(proposed.action, criticResult, policyResult, round - 1, config.maxRounds, session.riskScore);
     if (gate.decision === 'BLOCK') {
       emit(session, 'ACTION_BLOCKED', 'POLICY_REVIEW', `Action blocked: ${gate.reason}`, { reason: gate.reason });
@@ -86,15 +91,45 @@ async function negotiateVendor(session: NegotiationSession, vendor: Vendor, adap
   }
 }
 
+async function runVendor(session: NegotiationSession, vendor: Vendor, adapters: ModelAdapters) {
+  if (session.currentState === 'STOPPED' || session.currentState === 'HUMAN_REVIEW') return;
+  const rfqStarted = Date.now();
+  const rfq = sendRFQ(vendor, session.originalRequest);
+  recordTool(session, { toolName: 'vendor.send_rfq', durationMs: Date.now() - rfqStarted, success: true, retryCount: 0, input: { vendorId: vendor.id } });
+  emit(session, 'RFQ_SENT', 'RFQ_SENT', `RFQ sent to ${vendor.name}.`, { vendorId: vendor.id, rfq });
+  addMessage(session, vendor.id, 'AGENT', rfq, 1, 'RFQ');
+  emit(session, 'VENDOR_RESPONSE_RECEIVED', 'WAITING_FOR_VENDOR', `Waiting for ${vendor.name}'s response.`, { vendorId: vendor.id });
+  await negotiateVendor(session, vendor, adapters);
+}
+
+async function runVendorRange(session: NegotiationSession, vendors: Vendor[], startIndex: number, adapters: ModelAdapters) {
+  for (const vendor of vendors.slice(startIndex)) {
+    if (session.currentState === 'HUMAN_REVIEW' || session.currentState === 'STOPPED') break;
+    await runVendor(session, vendor, adapters);
+  }
+}
+
+function finalizeSession(session: NegotiationSession) {
+  if (session.currentState === 'HUMAN_REVIEW' || session.currentState === 'STOPPED' || session.currentState === 'ACCEPTED') return;
+  session.currentBestOffer = bestOffer(session.offers);
+  if (session.currentBestOffer && validateOffer(session.currentBestOffer, session.originalRequest).decision === 'PASS') {
+    session.stopReason = 'Compliant best offer selected after comparing all approved vendors.';
+    emit(session, 'DEAL_ACCEPTED', 'ACCEPTED', `Procurement complete with ${session.vendors.find((vendor) => vendor.id === session.currentBestOffer?.vendorId)?.name ?? 'selected vendor'}.`, { offerId: session.currentBestOffer.id, vendorId: session.currentBestOffer.vendorId });
+  } else {
+    session.stopReason = shouldStop(session, session.currentBestOffer ?? undefined) ?? 'No compliant offer was available within policy.';
+    emit(session, 'NEGOTIATION_STOPPED', 'STOPPED', session.stopReason);
+  }
+}
+
 export async function runSession(sessionId: string, adapters: ModelAdapters = defaultAdapters) {
   const session = store.sessions.get(sessionId); if (!session) return;
   try {
     emit(session, 'REQUIREMENT_EXTRACTED', 'INTAKE', 'Structured purchase requirement extracted from natural language.', { request: session.originalRequest });
-    const retrieval = await retrieveKnowledge('business hardware advance warranty delivery', { category: 'Business hardware' }); const evidence = retrieval.items; session.retrievedEvidence = evidence; session.retrievalMode = retrieval.mode; emit(session, 'POLICY_RETRIEVED', 'POLICY_CHECK', 'Procurement policy and historical vendor evidence retrieved.', { evidence, retrievalMode: session.retrievalMode });
+    const retrieval = await retrieveKnowledge('business hardware advance warranty delivery', { category: 'Business hardware' }); if (session.currentState === 'STOPPED') return; const evidence = retrieval.items; session.retrievedEvidence = evidence; session.retrievalMode = retrieval.mode; emit(session, 'POLICY_RETRIEVED', 'POLICY_CHECK', 'Procurement policy and historical vendor evidence retrieved.', { evidence, retrievalMode: session.retrievalMode });
     const vendors = searchVendors(session.originalRequest, session.requestId); session.vendors = vendors; emit(session, 'VENDORS_SELECTED', 'VENDOR_SELECTION', `${vendors.length} approved vendors selected for this RFQ.`, { vendors: vendors.map((vendor) => ({ id: vendor.id, name: vendor.name, reliabilityScore: vendor.reliabilityScore })) });
-    for (const vendor of vendors) { if (session.currentState === 'HUMAN_REVIEW' || session.currentState === 'STOPPED') break; const rfqStarted = Date.now(); const rfq = sendRFQ(vendor, session.originalRequest); recordTool(session, { toolName: 'vendor.send_rfq', durationMs: Date.now() - rfqStarted, success: true, retryCount: 0, input: { vendorId: vendor.id } }); emit(session, 'RFQ_SENT', 'RFQ_SENT', `RFQ sent to ${vendor.name}.`, { vendorId: vendor.id, rfq }); addMessage(session, vendor.id, 'AGENT', rfq, 1, 'RFQ'); emit(session, 'VENDOR_RESPONSE_RECEIVED', 'WAITING_FOR_VENDOR', `Waiting for ${vendor.name}'s response.`, { vendorId: vendor.id }); await negotiateVendor(session, vendor, adapters); }
-    if (session.currentState !== 'HUMAN_REVIEW' && session.currentState !== 'STOPPED') { session.currentBestOffer = bestOffer(session.offers); if (session.currentBestOffer && validateOffer(session.currentBestOffer, session.originalRequest).decision === 'PASS') { session.stopReason = 'Compliant best offer selected after comparing all approved vendors.'; emit(session, 'DEAL_ACCEPTED', 'ACCEPTED', `Procurement complete with ${session.vendors.find((vendor) => vendor.id === session.currentBestOffer?.vendorId)?.name ?? 'selected vendor'}.`, { offerId: session.currentBestOffer.id, vendorId: session.currentBestOffer.vendorId }); } else { session.stopReason = shouldStop(session, session.currentBestOffer ?? undefined) ?? 'No compliant offer was available within policy.'; emit(session, 'NEGOTIATION_STOPPED', 'STOPPED', session.stopReason); } }
-  } catch (error) { session.stopReason = error instanceof Error ? error.message : 'Unexpected agent failure.'; emit(session, 'AGENT_FAILED', 'FAILED', 'Agent stopped safely after an unexpected failure.', { error: session.stopReason }); }
+    await runVendorRange(session, vendors, 0, adapters);
+    finalizeSession(session);
+  } catch (error) { if (session.currentState !== 'STOPPED') { session.stopReason = error instanceof Error ? error.message : 'Unexpected agent failure.'; emit(session, 'AGENT_FAILED', 'FAILED', 'Agent stopped safely after an unexpected failure.', { error: 'Unexpected agent failure.' }); } }
 }
 
 export async function resumeSession(sessionId: string, adapters: ModelAdapters = defaultAdapters) {
@@ -108,13 +143,13 @@ export async function resumeSession(sessionId: string, adapters: ModelAdapters =
   const policy = validateAction(action, session.originalRequest, offer);
   session.criticResult = critic.result;
   session.policyResult = policy;
-  const gate = evaluateAction(action, critic.result, policy, Math.max(0, session.currentRound - 1), config.maxRounds, session.riskScore);
+  const gate = evaluateAction(action, critic.result, policy, Math.max(0, session.currentRound - 1), config.maxRounds, 0);
   if (gate.decision === 'BLOCK' || gate.decision === 'STOP') {
     session.humanReview.status = 'STOPPED'; session.humanReview.resolvedAt = now(); session.stopReason = gate.reason; session.currentState = 'STOPPED'; emit(session, 'ACTION_BLOCKED', 'STOPPED', `Approval could not override deterministic policy: ${gate.reason}`, { reason: gate.reason }); return session;
   }
   if (gate.decision === 'HUMAN_REVIEW') { session.humanReview.status = 'PENDING'; session.humanReview.resolvedAt = undefined; session.currentState = 'HUMAN_REVIEW'; session.stopReason = gate.reason; emit(session, 'HUMAN_REVIEW_REQUIRED', 'HUMAN_REVIEW', `Revalidation still requires human review: ${gate.reason}`, { reason: gate.reason, reviewId: session.humanReview.id }); return session; }
   session.humanReview = null; session.pendingAction = null; session.stopReason = null;
   if (action.type === 'ACCEPT') { session.currentState = 'ACCEPTED'; session.stopReason = 'Human approval revalidated and accepted the held action.'; emit(session, 'HUMAN_APPROVED', 'ACCEPTED', 'Human-approved action passed critic and policy revalidation.', { offerId: offer.id }); return session; }
-  if (action.type === 'SEND_COUNTER') { const vendor = session.vendors.find((item) => item.id === action.vendorId); if (vendor) { addMessage(session, vendor.id, 'AGENT', sendNegotiationMessage(vendor, action.message), session.currentRound, 'COUNTEROFFER'); emit(session, 'COUNTEROFFER_SENT', 'EXECUTION', `Approved counteroffer sent to ${vendor.name}.`, { vendorId: vendor.id, proposedTerms: action.proposedTerms }); await negotiateVendor(session, vendor, adapters); } }
+  if (action.type === 'SEND_COUNTER') { const vendorIndex = session.vendors.findIndex((item) => item.id === action.vendorId); const vendor = session.vendors[vendorIndex]; if (vendor) { addMessage(session, vendor.id, 'AGENT', sendNegotiationMessage(vendor, action.message), session.currentRound, 'COUNTEROFFER'); emit(session, 'COUNTEROFFER_SENT', 'EXECUTION', `Approved counteroffer sent to ${vendor.name}.`, { vendorId: vendor.id, proposedTerms: action.proposedTerms }); await negotiateVendor(session, vendor, adapters); await runVendorRange(session, session.vendors, vendorIndex + 1, adapters); finalizeSession(session); } }
   return session;
 }

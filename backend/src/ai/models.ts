@@ -81,7 +81,8 @@ const deterministicCritique = (session: NegotiationSession, offer: Offer, action
   if ((terms.unitPrice ?? offer.unitPrice) > session.maximumUnitPrice) violations.push(`Unit price exceeds ₹${session.maximumUnitPrice.toLocaleString('en-IN')}.`);
   if ((terms.deliveryDays ?? offer.deliveryDays) > session.maximumDeliveryDays) violations.push(`Delivery exceeds ${session.maximumDeliveryDays} days.`);
   if ((terms.warrantyMonths ?? offer.warrantyMonths) < session.minimumWarrantyMonths) violations.push(`Warranty is below ${session.minimumWarrantyMonths} months.`);
-  const warn = !violations.length && offer.unitPrice > (session.targetUnitPrice ?? session.maximumUnitPrice);
+  const evaluatedPrice = action.type === 'SEND_COUNTER' ? terms.unitPrice : offer.unitPrice;
+  const warn = !violations.length && evaluatedPrice > (session.targetUnitPrice ?? session.maximumUnitPrice);
   return { decision: violations.length ? 'BLOCK' : warn ? 'WARN' : 'PASS', confidence: violations.length ? 0.97 : 0.94, policyViolations: violations, concerns: warn ? ['Offer is above target price but within hard cap.'] : [], evidence: [`Request cap: ₹${session.maximumUnitPrice.toLocaleString('en-IN')}`, `Advance limit: ${session.maximumAdvancePaymentPercent}%`, `Vendor: ${session.vendors.find((item) => item.id === offer.vendorId)?.name ?? offer.vendorId}`], requiresHumanReview: false };
 };
 

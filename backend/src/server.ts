@@ -7,21 +7,29 @@ import { appendEvent, persistStoredApproval, store, subscribe } from './store';
 import { createId, now, type ProcurementRequest } from './domain';
 import { runEvaluation } from './evaluation/runner';
 import { config, assertProductionConfig } from './utils/config';
-import { ApplicationError, ValidationError } from './errors';
+import { ApplicationError } from './errors';
 import { findEvaluation, findRequest, hydrateSession, persistRequest } from './db/repository';
 
 const server = fastify({ logger: true });
 server.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => done(null, body || {}));
 await server.register(cors, { origin: config.clientOrigin, credentials: true });
+server.addHook('onRequest', async (request, reply) => {
+  const path = request.url.split('?')[0] ?? '';
+  if (!path.startsWith('/api/') || path === '/api/health' || request.method === 'OPTIONS') return;
+  if (request.headers.authorization !== `Bearer ${config.apiKey}`) {
+    return reply.code(401).send({ error: 'Authentication required.', code: 'UNAUTHORIZED' });
+  }
+});
 
 const idSchema = z.string().uuid();
 const procurementBodySchema = z.object({ rawRequest: z.string().trim().min(8).max(5000) }).strict();
 const decisionSchema = z.enum(['approve', 'reject', 'stop']);
-const evaluationBodySchema = z.object({ mode: z.enum(['provider', 'test-adapter']).optional() }).default({});
+const evaluationBodySchema = z.object({ mode: z.literal('provider').optional() }).default({});
 type LocalRecord = ProcurementRequest & { id: string; rawRequest: string; status: string; createdAt: string };
 
 const publicSession = (session: ReturnType<typeof createSession>) => ({ ...session, vendors: session.vendors.map(({ behavior, ...vendor }) => vendor) });
 const cacheSession = (session: ReturnType<typeof createSession>) => { store.sessions.set(session.id, session); store.events.set(session.id, session.events); store.messages.set(session.id, session.messages); return session; };
+const startLocks = new Map<string, Promise<{ session: ReturnType<typeof createSession>; created: boolean }>>();
 const parseId = (value: string) => idSchema.parse(value);
 const getSession = async (identifier: string) => {
   parseId(identifier);
@@ -32,10 +40,14 @@ const getSession = async (identifier: string) => {
 };
 const getRequest = async (requestId: string) => store.requests.get(requestId) ?? await findRequest(requestId);
 const parseBody = (body: unknown) => procurementBodySchema.parse(typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })() : body);
-const safeError = (error: unknown) => error instanceof ApplicationError ? { status: 400, body: { error: error.message, code: error.code } } : { status: 500, body: { error: 'Internal server error.', code: 'INTERNAL_ERROR' } };
+const safeError = (error: unknown) => {
+  if (error instanceof ApplicationError) return { status: 400, body: { error: error.message, code: error.code } };
+  if (error instanceof z.ZodError) return { status: 400, body: { error: 'Request validation failed.', code: 'VALIDATION_ERROR' } };
+  return { status: 500, body: { error: 'Internal server error.', code: 'INTERNAL_ERROR' } };
+};
 
 server.get('/', async () => ({ name: 'Procura', status: 'ok', description: 'Policy-bounded autonomous procurement negotiator' }));
-server.get('/api/health', async () => ({ status: 'ok', mode: 'provider-enabled', database: 'neon' }));
+server.get('/api/health', async () => ({ status: 'ok', mode: 'provider-enabled', database: config.databaseUrl ? 'neon' : 'unconfigured' }));
 
 server.post('/api/procurements', async (request, reply) => {
   try {
@@ -56,13 +68,22 @@ server.post<{ Params: { id: string } }>('/api/procurements/:id/start', async (re
     const id = parseId(request.params.id);
     const record = await getRequest(id);
     if (!record) return reply.code(404).send({ error: 'Procurement not found.', code: 'NOT_FOUND' });
-    const existing = await getSession(id);
-    if (existing) return reply.code(200).send({ requestId: record.id, sessionId: existing.id, session: publicSession(existing) });
-    const session = cacheSession(createSession(record.id, record));
-    record.status = 'RUNNING';
-    await persistRequest(record);
-    void runSession(session.id);
-    return reply.code(202).send({ requestId: record.id, sessionId: session.id, session: publicSession(session) });
+    const pending = startLocks.get(id);
+    if (pending) { const result = await pending; return reply.code(200).send({ requestId: record.id, sessionId: result.session.id, session: publicSession(result.session) }); }
+    const creation = (async () => {
+      const existing = await getSession(id);
+      if (existing) return { session: existing, created: false };
+      const session = cacheSession(createSession(record.id, record));
+      record.status = 'RUNNING';
+      await persistRequest(record);
+      void runSession(session.id);
+      return { session, created: true };
+    })();
+    startLocks.set(id, creation);
+    try {
+      const result = await creation;
+      return reply.code(result.created ? 202 : 200).send({ requestId: record.id, sessionId: result.session.id, session: publicSession(result.session) });
+    } finally { startLocks.delete(id); }
   } catch (error) {
     const result = safeError(error);
     return reply.code(result.status).send(result.body);
@@ -101,6 +122,7 @@ server.post<{ Params: { id: string; decision: string } }>('/api/procurements/:id
     const session = await getSession(request.params.id);
     if (!session) return reply.code(404).send({ error: 'Procurement session not found.', code: 'NOT_FOUND' });
     const decision = decisionSchema.parse(request.params.decision);
+    if (decision === 'stop' && ['ACCEPTED', 'STOPPED', 'FAILED'].includes(session.currentState)) return reply.code(409).send({ error: 'Terminal procurement sessions cannot be stopped.', code: 'SESSION_TERMINAL' });
     const review = session.humanReview;
     if (decision !== 'stop' && !review) return reply.code(409).send({ error: 'No pending human review.', code: 'NO_PENDING_REVIEW' });
     if (review && review.status !== 'PENDING') {

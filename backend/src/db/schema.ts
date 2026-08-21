@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, numeric, pgTable, real, text, timestamp, uuid, vector } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, numeric, pgTable, real, text, timestamp, uniqueIndex, uuid, vector } from 'drizzle-orm/pg-core';
 
 const id = () => uuid('id').defaultRandom().primaryKey();
 const createdAt = () => timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
@@ -24,7 +24,7 @@ export const vendorOffers = pgTable('vendor_offers', {
 
 export const negotiationSessions = pgTable('negotiation_sessions', {
   id: id(), requestId: uuid('request_id').notNull(), status: text('status').notNull(), currentVendorId: uuid('current_vendor_id'), currentRound: integer('current_round').notNull().default(0), currentBestOfferId: uuid('current_best_offer_id'), pendingAction: jsonb('pending_action'), riskScore: real('risk_score').notNull().default(0), confidence: real('confidence').notNull().default(0), stopReason: text('stop_reason'), createdAt: createdAt(), updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({ requestIdUnique: uniqueIndex('negotiation_sessions_request_id_idx').on(table.requestId) }));
 
 export const negotiationMessages = pgTable('negotiation_messages', {
   id: id(), sessionId: uuid('session_id').notNull(), vendorId: uuid('vendor_id').notNull(), sender: text('sender').notNull(), content: text('content').notNull(), roundNumber: integer('round_number').notNull(), messageType: text('message_type').notNull(), createdAt: createdAt(),

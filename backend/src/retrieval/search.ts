@@ -28,8 +28,9 @@ export async function retrieveKnowledge(query: string, filters?: Partial<Pick<Kn
     if (config.googleApiKey) {
       const google = createGoogleGenerativeAI({ apiKey: config.googleApiKey });
       const { embedding } = await embed({ model: google.embeddingModel(config.embeddingModel), value: query });
-      const filter = filters?.type ? sql`AND d.type = ${filters.type}` : sql.empty();
-      const rows = await db.execute(sql`SELECT c.id, d.type, d.title, c.content, c.metadata FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id WHERE c.embedding IS NOT NULL ${filter} ORDER BY c.embedding <=> ${JSON.stringify(embedding)}::vector LIMIT 5`);
+      const typeFilter = filters?.type ? sql`AND d.type = ${filters.type}` : sql.empty();
+      const categoryFilter = filters?.category ? sql`AND COALESCE(c.metadata->>'category', d.metadata->>'category') = ${filters.category}` : sql.empty();
+      const rows = await db.execute(sql`SELECT c.id, d.type, d.title, c.content, c.metadata FROM knowledge_chunks c JOIN knowledge_documents d ON d.id = c.document_id WHERE c.embedding IS NOT NULL ${typeFilter} ${categoryFilter} ORDER BY c.embedding <=> ${JSON.stringify(embedding)}::vector LIMIT 5`);
       const items = (rows as unknown as Array<{ id: string; type: KnowledgeItem['type']; title: string; content: string; metadata?: Record<string, unknown> }>).map((row) => ({ id: row.id, type: row.type, title: row.title, content: row.content, metadata: row.metadata }));
       if (items.length) return { items, mode: 'pgvector' };
     }
