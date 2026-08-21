@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Clock3, Laptop, Users } from 'lucide-react';
+import { Clock3, Laptop } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 import { Metric } from '../common/Metric';
 
@@ -47,9 +47,6 @@ export function RequestHeader({ session }) {
             </span>
             <span>
               <Clock3 size={15} /> Started {formatTime(session.startedAt)}
-            </span>
-            <span>
-              <Users size={15} /> Owner: Priya Mehta
             </span>
           </div>
         </div>

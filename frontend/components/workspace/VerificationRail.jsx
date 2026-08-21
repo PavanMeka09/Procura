@@ -3,7 +3,6 @@
 import React from 'react';
 import {
   Activity,
-  ArrowRight,
   Check,
   ShieldCheck,
   Sparkles,
@@ -181,9 +180,6 @@ export function VerificationRail({ session, onReview }) {
           <div>
             <strong>Procurement completed</strong>
             <p>Contract-ready deal selected with {vendor?.name}.</p>
-            <button type="button" className="text-button">
-              View contract <ArrowRight size={14} />
-            </button>
           </div>
         </section>
       )}

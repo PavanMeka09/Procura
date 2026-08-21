@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Bell, CircleHelp, ChevronDown } from 'lucide-react';
 import { SidebarRail } from '../navigation/SidebarRail';
 import { RequestHeader } from './RequestHeader';
 import { BestOfferCard } from './BestOfferCard';
@@ -50,17 +49,6 @@ export function ControlRoom({ initialSession, onNew }) {
             </p>
           </div>
 
-          <div className="header-actions">
-            <button type="button" className="icon-button" aria-label="Notifications">
-              <Bell size={18} />
-            </button>
-            <button type="button" className="icon-button" aria-label="Help">
-              <CircleHelp size={18} />
-            </button>
-            <div className="workspace-select">
-              Enterprise IT <ChevronDown size={15} />
-            </div>
-          </div>
         </header>
 
         {/* Content switcher */}

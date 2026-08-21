@@ -4,8 +4,6 @@ import React from 'react';
 import {
   Activity,
   BadgeCheck,
-  CircleHelp,
-  ChevronDown,
   FileText,
   LayoutDashboard,
   ShieldCheck,
@@ -62,20 +60,6 @@ export function SidebarRail({ onNew, onEvaluation }) {
         </button>
       </nav>
 
-      {/* User profile & support */}
-      <div className="rail-bottom">
-        <div className="profile">
-          <div className="avatar">PM</div>
-          <div>
-            <strong>Priya Mehta</strong>
-            <span>Procurement Manager</span>
-          </div>
-          <ChevronDown size={15} />
-        </div>
-        <div className="support">
-          <CircleHelp size={16} /> Help &amp; support
-        </div>
-      </div>
     </aside>
   );
 }

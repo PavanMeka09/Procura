@@ -57,7 +57,6 @@ export function NegotiationTimeline({ session }) {
                     <StatusBadge tone={tone}>
                       {event.type.replace(/_/g, ' ')}
                     </StatusBadge>
-                    <span className="muted">by Procura</span>
                   </div>
                   <p>{event.message}</p>
                 </div>

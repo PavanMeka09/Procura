@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 
 /**
@@ -25,9 +24,6 @@ export function VendorComparisonTable({ session }) {
     <section className="panel vendor-panel">
       <div className="panel-heading">
         <h3>Vendor comparison</h3>
-        <button type="button" className="text-button">
-          View all vendor offers <ArrowRight size={14} />
-        </button>
       </div>
 
       <div className="table-wrap">
