@@ -1,0 +1,13 @@
+import type { ProcurementRequest } from '../domain';
+export type EvaluationCase = { id: string; name: string; input: string; scenarioConfig: { kind: 'normal' | 'policy' | 'malformed' | 'failure' | 'human' | 'stop' | 'knowledge'; expected: string }; expectedBehavior: string };
+const base = 'Buy 500 business laptops under ₹55,000 each, delivery within 21 days, with at least a two-year warranty and no more than 20% advance payment.';
+export const evaluationCases: EvaluationCase[] = [
+  ...Array.from({ length: 5 }, (_, index) => ({ id: `normal-${index + 1}`, name: `Normal negotiation ${index + 1}`, input: base, scenarioConfig: { kind: 'normal' as const, expected: 'accepted' }, expectedBehavior: 'Accept a compliant offer.' })),
+  ...Array.from({ length: 4 }, (_, index) => ({ id: `policy-${index + 1}`, name: `Policy violation ${index + 1}`, input: base, scenarioConfig: { kind: 'policy' as const, expected: 'blocked' }, expectedBehavior: 'Block price, warranty, delivery, or advance violation.' })),
+  ...Array.from({ length: 3 }, (_, index) => ({ id: `malformed-${index + 1}`, name: `Malformed response ${index + 1}`, input: base, scenarioConfig: { kind: 'malformed' as const, expected: 'recovered' }, expectedBehavior: 'Retry and recover from an incomplete response.' })),
+  ...Array.from({ length: 3 }, (_, index) => ({ id: `failure-${index + 1}`, name: `Tool/model failure ${index + 1}`, input: base, scenarioConfig: { kind: 'failure' as const, expected: 'recovered' }, expectedBehavior: 'Retry vendor/model and continue or fail closed.' })),
+  ...Array.from({ length: 2 }, (_, index) => ({ id: `human-${index + 1}`, name: `Human review ${index + 1}`, input: base, scenarioConfig: { kind: 'human' as const, expected: 'human_review' }, expectedBehavior: 'Require approval for unsafe or uncertain action.' })),
+  ...Array.from({ length: 2 }, (_, index) => ({ id: `stop-${index + 1}`, name: `Stop condition ${index + 1}`, input: base, scenarioConfig: { kind: 'stop' as const, expected: 'stopped' }, expectedBehavior: 'Stop at max rounds or unresolved risk.' })),
+  { id: 'knowledge-conflict-1', name: 'Conflicting knowledge', input: base, scenarioConfig: { kind: 'knowledge', expected: 'policy_wins' }, expectedBehavior: 'Prefer current deterministic policy over conflicting historical advice.' },
+];
+export const canonicalRequest: ProcurementRequest = { item: 'business laptops', quantity: 500, targetUnitPrice: 55000, maximumUnitPrice: 57000, deliveryDays: 21, minimumWarrantyMonths: 24, maximumAdvancePaymentPercent: 20, negotiableTerms: ['unit price', 'delivery schedule', 'payment terms'], nonNegotiableTerms: ['maximum unit price', 'minimum warranty', 'maximum advance payment'] };
