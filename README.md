@@ -23,7 +23,7 @@ copy .env.example .env.local
 bun run dev
 ```
 
-Open `http://localhost:3000`. The canonical scenario is prefilled. With no provider keys or database URL, the app runs a deterministic demo mode so the full workflow remains demonstrable. With `GOOGLE_GENERATIVE_AI_API_KEY` and `OPENROUTER_API_KEY`, Gemini is used for both negotiation and independent criticism (`gemini-3.1-flash-lite` by default), while DeepSeek remains the negotiator fallback.
+Open `http://localhost:3000` after configuring `DATABASE_URL`, `PROCURA_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, and `OPENROUTER_API_KEY` in the backend, plus `BACKEND_API_URL` and the server-only `PROCURA_API_KEY` in the frontend. Gemini is used for negotiation and independent criticism, while DeepSeek remains the negotiator fallback.
 
 ## Verification
 
@@ -37,11 +37,7 @@ cd ../frontend
 bun run build
 ```
 
-The backend uses Drizzle schema definitions for Neon PostgreSQL in `src/db/schema.ts`. Set `DATABASE_URL` and run `bun run db:push` to provision the tables. Runtime demo state uses a small server-side persistence adapter when no database is configured, which makes local development and the evaluation harness runnable without external infrastructure.
-
-## Demo flow
-
-The seeded vendors include delayed, malformed, and temporarily unavailable responses. Vendor A’s 50% advance proposal is deliberately surfaced as a verification case: the negotiator proposes, Gemini/deterministic critic blocks, the policy engine blocks, and a safe corrective counter is sent. The final comparison selects the actual best compliant offer from Vertex Systems at ₹55,500/unit for the canonical request.
+The backend uses Drizzle schema definitions for Neon PostgreSQL in `src/db/schema.ts`. Set the required environment variables and run `bun run db:push` to provision the tables.
 
 ## API
 
