@@ -294,48 +294,63 @@ export async function persistApproval(
     });
 }
 
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUuid(val: string | null | undefined): boolean {
+  return Boolean(val && uuidRegex.test(val));
+}
+
 export async function persistModelRun(run: ModelRun): Promise<void> {
   if (!db || !run.id || !run.requestId || !run.sessionId) return;
+  if (!isValidUuid(run.id) || !isValidUuid(run.requestId) || !isValidUuid(run.sessionId)) return;
 
-  await db
-    .insert(modelRuns)
-    .values({
-      id: run.id,
-      requestId: run.requestId,
-      sessionId: run.sessionId,
-      model: run.model,
-      role: run.role,
-      promptVersion: run.promptVersion ?? 'v1',
-      durationMs: run.durationMs,
-      retryCount: run.retryCount,
-      fallback: run.fallback,
-      success: run.success,
-      roundNumber: run.roundNumber ?? null,
-      inputTokens: run.usage?.inputTokens ?? null,
-      outputTokens: run.usage?.outputTokens ?? null,
-      estimatedCost: toNumericString(run.estimatedCost),
-    })
-    .onConflictDoNothing();
+  try {
+    await db
+      .insert(modelRuns)
+      .values({
+        id: run.id,
+        requestId: run.requestId,
+        sessionId: run.sessionId,
+        model: run.model,
+        role: run.role,
+        promptVersion: run.promptVersion ?? 'v1',
+        durationMs: run.durationMs,
+        retryCount: run.retryCount,
+        fallback: run.fallback,
+        success: run.success,
+        roundNumber: run.roundNumber ?? null,
+        inputTokens: run.usage?.inputTokens ?? null,
+        outputTokens: run.usage?.outputTokens ?? null,
+        estimatedCost: toNumericString(run.estimatedCost),
+      })
+      .onConflictDoNothing();
+  } catch {
+    // Best-effort persistence
+  }
 }
 
 export async function persistToolExecution(tool: ToolExecution): Promise<void> {
   if (!db || !tool.id || !tool.requestId || !tool.sessionId) return;
+  if (!isValidUuid(tool.id) || !isValidUuid(tool.requestId) || !isValidUuid(tool.sessionId)) return;
 
-  await db
-    .insert(toolExecutions)
-    .values({
-      id: tool.id,
-      requestId: tool.requestId,
-      sessionId: tool.sessionId,
-      toolName: tool.toolName,
-      durationMs: tool.durationMs,
-      success: tool.success,
-      retryCount: tool.retryCount,
-      input: tool.input ?? null,
-      error: tool.error ?? null,
-      createdAt: tool.createdAt ? new Date(tool.createdAt) : new Date(),
-    })
-    .onConflictDoNothing();
+  try {
+    await db
+      .insert(toolExecutions)
+      .values({
+        id: tool.id,
+        requestId: tool.requestId,
+        sessionId: tool.sessionId,
+        toolName: tool.toolName,
+        durationMs: tool.durationMs,
+        success: tool.success,
+        retryCount: tool.retryCount,
+        input: tool.input ?? null,
+        error: tool.error ?? null,
+        createdAt: tool.createdAt ? new Date(tool.createdAt) : new Date(),
+      })
+      .onConflictDoNothing();
+  } catch {
+    // Best-effort persistence
+  }
 }
 
 export async function persistEvaluation(run: EvaluationRun): Promise<void> {

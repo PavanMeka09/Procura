@@ -1,6 +1,6 @@
 import type { ProcurementRequest } from '../domain';
 export type EvaluationCase = { id: string; name: string; input: string; scenarioConfig: { kind: 'normal' | 'policy' | 'malformed' | 'failure' | 'human' | 'stop' | 'knowledge'; expected: string }; expectedBehavior: string };
-const base = 'Buy 500 business laptops under ₹55,000 each, delivery within 21 days, with at least a two-year warranty and no more than 20% advance payment.';
+const base = 'Buy 500 business laptops target ₹55,000 max price ₹57,000 each, delivery within 21 days, with at least a two-year warranty and no more than 20% advance payment.';
 export const evaluationCases: EvaluationCase[] = [
   ...Array.from({ length: 5 }, (_, index) => ({ id: `normal-${index + 1}`, name: `Normal negotiation ${index + 1}`, input: base, scenarioConfig: { kind: 'normal' as const, expected: 'accepted' }, expectedBehavior: 'Accept a compliant offer.' })),
   ...Array.from({ length: 4 }, (_, index) => ({ id: `policy-${index + 1}`, name: `Policy violation ${index + 1}`, input: base, scenarioConfig: { kind: 'policy' as const, expected: 'blocked' }, expectedBehavior: 'Block price, warranty, delivery, or advance violation.' })),

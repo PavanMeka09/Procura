@@ -19,6 +19,8 @@ export const config = {
   fallbackModel: process.env.FALLBACK_MODEL ?? 'deepseek/deepseek-v3.2',
   maxRounds: Number(process.env.MAX_NEGOTIATION_ROUNDS ?? 5),
   embeddingModel: process.env.EMBEDDING_MODEL ?? 'text-embedding-004',
+  vendorMode: (process.env.VENDOR_MODE ?? 'dynamic') as 'dynamic' | 'seeded' | 'hybrid' | 'external',
+  vendorAgentModel: process.env.VENDOR_AGENT_MODEL ?? process.env.PRIMARY_MODEL ?? 'gemini-3.7-flash',
   modelPricing: parsePricing(),
 };
 

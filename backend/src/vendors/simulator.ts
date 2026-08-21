@@ -1,6 +1,12 @@
 import { VendorError } from '../errors';
 import { createId } from '../domain';
 import type { Offer, ProcurementRequest, Vendor } from '../domain';
+import { config } from '../utils/config';
+import { getAIVendorResponse } from './ai-vendor-agent';
+import { getHttpVendorResponse } from './http-vendor-connector';
+import type { VendorNegotiationContext, VendorResponse } from './types';
+
+export type { VendorResponse, VendorNegotiationContext, VendorConnector, VendorExecutionMode } from './types';
 
 export const VENDOR_IDS = {
   apex: '4bce3f2e-ef21-4c93-b2bb-4e8a2a2f5c01',
@@ -9,7 +15,7 @@ export const VENDOR_IDS = {
 } as const;
 
 /**
- * Creates a synthetic vendor offer structure.
+ * Creates a synthetic vendor offer structure for deterministic test suites.
  */
 function createSyntheticOffer(
   requestId: string,
@@ -43,7 +49,8 @@ function createSyntheticOffer(
 }
 
 /**
- * Returns seeded test vendors with predefined multi-round concession curves and simulated failure triggers.
+ * Returns autonomous vendor profiles equipped with private commercial constraints,
+ * sales personas, and fallback multi-round concession curves.
  */
 export function seededVendors(requestId: string): Vendor[] {
   return [
@@ -55,6 +62,20 @@ export function seededVendors(requestId: string): Vendor[] {
       approved: true,
       reliabilityScore: 0.84,
       contact: 'sales@apex.example',
+      vendorType: 'ai_agent',
+      channel: 'Autonomous AI Sales Agent',
+      salesPersona:
+        'Fast-paced commercial hardware supplier. Prioritizes deal volume and quick closure over maximum margin; willing to make larger price concessions if advance payment terms are met.',
+      privateConstraints: {
+        floorUnitPrice: 55500,
+        targetUnitPrice: 60000,
+        minAdvancePercent: 20,
+        minDeliveryDays: 20,
+        maxWarrantyMonths: 24,
+        concessionStrategy: 'eager_closer',
+        salesPersona:
+          'Apex Devices sales director. Open to cutting price down to ₹55,500 for rapid closing.',
+      },
       behavior: {
         initial: createSyntheticOffer(
           requestId,
@@ -99,6 +120,20 @@ export function seededVendors(requestId: string): Vendor[] {
       approved: true,
       reliabilityScore: 0.91,
       contact: 'rfq@northstar.example',
+      vendorType: 'ai_agent',
+      channel: 'Autonomous AI Sales Agent',
+      salesPersona:
+        'Enterprise IT hardware distributor. Backed by extensive 36-month warranties and rapid 14-day delivery; enforces strict minimum margin floors.',
+      privateConstraints: {
+        floorUnitPrice: 56000,
+        targetUnitPrice: 62000,
+        minAdvancePercent: 20,
+        minDeliveryDays: 14,
+        maxWarrantyMonths: 36,
+        concessionStrategy: 'tough_bargainer',
+        salesPersona:
+          'Northstar IT enterprise sales VP. Emphasizes superior 36-month warranty and rapid fulfillment; holds a firm floor of ₹56,000.',
+      },
       behavior: {
         initial: createSyntheticOffer(
           requestId,
@@ -143,6 +178,20 @@ export function seededVendors(requestId: string): Vendor[] {
       approved: true,
       reliabilityScore: 0.96,
       contact: 'commercial@vertex.example',
+      vendorType: 'ai_agent',
+      channel: 'Autonomous AI Sales Agent',
+      salesPersona:
+        'Established IT systems integrator. Offers balanced commercial terms with predictable step-by-step price concessions down to ₹55,000.',
+      privateConstraints: {
+        floorUnitPrice: 55000,
+        targetUnitPrice: 58000,
+        minAdvancePercent: 20,
+        minDeliveryDays: 21,
+        maxWarrantyMonths: 24,
+        concessionStrategy: 'balanced',
+        salesPersona:
+          'Vertex Systems commercial account manager. Bids competitively with high reliability and balanced concession curves.',
+      },
       behavior: {
         initial: createSyntheticOffer(
           requestId,
@@ -210,47 +259,58 @@ export function sendNegotiationMessage(vendor: Vendor, message: string): string 
   return `Counteroffer sent to ${vendor.name}: ${message}`;
 }
 
-export type VendorResponse =
-  | { failure: 'timeout' | 'tool failure' }
-  | { raw: string }
-  | { offer: Offer };
-
+/**
+ * Returns a vendor response by dynamically routing to the appropriate connector:
+ * - Autonomous AI Vendor Agent (Default): Reacts dynamically to buyer counter-offers using private constraints and LLM sales persona.
+ * - HTTP External Connector: Dispatches to external REST endpoints.
+ * - Seeded Benchmark Simulator: Replays deterministic concession curves for test suites.
+ */
 export function getVendorResponse(
   vendor: Vendor,
-  roundNumber: number,
-  requestId: string,
-  request: ProcurementRequest,
-  failureConsumed: boolean
-): VendorResponse {
-  // Simulate controlled tool/vendor failures on first attempt
-  if (!failureConsumed && vendor.behavior.failure === 'DELAY_ONCE') {
-    return { failure: 'timeout' };
-  }
+  context: VendorNegotiationContext
+): Promise<VendorResponse> | VendorResponse {
+  const { roundNumber, requestId, request, failureConsumed = false } = context;
+  const activeMode = context.mode ?? config.vendorMode ?? 'dynamic';
 
-  if (!failureConsumed && vendor.behavior.failure === 'TEMPORARY_FAILURE_ONCE') {
-    return { failure: 'tool failure' };
-  }
+  // 1. Seeded deterministic execution mode for regression benchmarks
+  if (activeMode === 'seeded' || vendor.vendorType === 'seeded') {
+    if (!failureConsumed && vendor.behavior?.failure === 'DELAY_ONCE') {
+      return { failure: 'timeout' };
+    }
 
-  if (!failureConsumed && vendor.behavior.failure === 'MALFORMED_ONCE') {
+    if (!failureConsumed && vendor.behavior?.failure === 'TEMPORARY_FAILURE_ONCE') {
+      return { failure: 'tool failure' };
+    }
+
+    if (!failureConsumed && vendor.behavior?.failure === 'MALFORMED_ONCE') {
+      return {
+        raw: 'We can probably meet your request. Please contact our team for commercial details.',
+      };
+    }
+
+    const roundIndex = Math.min(roundNumber - 2, (vendor.behavior?.rounds?.length ?? 1) - 1);
+    const sourceOffer =
+      roundNumber === 1 ? vendor.behavior?.initial : vendor.behavior?.rounds?.[roundIndex];
+
+    if (!sourceOffer) {
+      throw new VendorError('Vendor has no further commercial response.');
+    }
+
     return {
-      raw: 'We can probably meet your request. Please contact our team for commercial details.',
+      offer: {
+        ...sourceOffer,
+        id: createId(),
+        requestId,
+        totalPrice: sourceOffer.unitPrice * request.quantity,
+      },
     };
   }
 
-  const roundIndex = Math.min(roundNumber - 2, vendor.behavior.rounds.length - 1);
-  const sourceOffer =
-    roundNumber === 1 ? vendor.behavior.initial : vendor.behavior.rounds[roundIndex];
-
-  if (!sourceOffer) {
-    throw new VendorError('Vendor has no further commercial response.');
+  // 2. HTTP External API Connector for live REST vendor services
+  if (vendor.vendorType === 'http_api' || activeMode === 'external') {
+    return getHttpVendorResponse(vendor, context);
   }
 
-  return {
-    offer: {
-      ...sourceOffer,
-      id: createId(),
-      requestId,
-      totalPrice: sourceOffer.unitPrice * request.quantity,
-    },
-  };
+  // 3. Autonomous AI Vendor Agent counter-party (Default)
+  return getAIVendorResponse(vendor, context);
 }

@@ -60,6 +60,16 @@ export interface ProcurementRequest {
   nonNegotiableTerms: string[];
 }
 
+export interface VendorPrivateConstraints {
+  floorUnitPrice: number;
+  targetUnitPrice: number;
+  minAdvancePercent: number;
+  minDeliveryDays: number;
+  maxWarrantyMonths: number;
+  concessionStrategy: 'eager_closer' | 'tough_bargainer' | 'balanced';
+  salesPersona: string;
+}
+
 export interface Vendor {
   id: string;
   slug: string;
@@ -68,6 +78,11 @@ export interface Vendor {
   approved: boolean;
   reliabilityScore: number;
   contact: string;
+  vendorType?: 'ai_agent' | 'http_api' | 'seeded';
+  channel?: string;
+  salesPersona?: string;
+  endpointUrl?: string;
+  privateConstraints?: VendorPrivateConstraints;
   behavior: {
     initial: Offer;
     rounds: Offer[];

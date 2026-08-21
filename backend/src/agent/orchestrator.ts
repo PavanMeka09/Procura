@@ -195,7 +195,7 @@ function recordModelRuns(
     };
 
     session.modelRuns.push(storedRun);
-    void persistModelRun(storedRun);
+    persistInBackground(persistModelRun(storedRun));
   }
 }
 
@@ -218,7 +218,7 @@ function recordTool(
   };
 
   session.toolExecutions.push(storedTool);
-  void persistToolExecution(storedTool);
+  persistInBackground(persistToolExecution(storedTool));
 }
 
 
@@ -257,9 +257,17 @@ function createSafeCounterAction(
 async function getOfferWithRecovery(
   session: NegotiationSession,
   vendor: Vendor,
-  round: number
+  round: number,
+  context?: import('../vendors/simulator').VendorNegotiationContext
 ): Promise<Offer | null> {
   let failureConsumed = false;
+
+  const toolName =
+    vendor.vendorType === 'http_api'
+      ? 'vendor.http_api'
+      : vendor.vendorType === 'ai_agent'
+      ? 'vendor.ai_sales_agent'
+      : 'vendor.get_response';
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (session.currentState === 'STOPPED') return null;
@@ -270,21 +278,26 @@ async function getOfferWithRecovery(
       let response;
 
       try {
-        response = getVendorResponse(
-          vendor,
-          round,
-          session.requestId,
-          session.originalRequest,
-          failureConsumed
-        );
+        response = await getVendorResponse(vendor, {
+          requestId: session.requestId,
+          roundNumber: round,
+          request: session.originalRequest,
+          failureConsumed,
+          ...context,
+        });
         toolSucceeded = !('failure' in response);
       } finally {
         recordTool(session, {
-          toolName: 'vendor.get_response',
+          toolName,
           durationMs: Date.now() - toolStartTime,
           success: toolSucceeded,
           retryCount: attempt,
-          input: { vendorId: vendor.id, round },
+          input: {
+            vendorId: vendor.id,
+            round,
+            vendorType: vendor.vendorType ?? 'ai_agent',
+            counterPrice: context?.lastProposedTerms?.unitPrice,
+          },
         });
       }
 
@@ -388,6 +401,7 @@ async function negotiateVendor(
 ): Promise<void> {
   session.currentVendorId = vendor.id;
   let hasBlockedActionOnce = false;
+  let lastSentCounter: { message: string; proposedTerms?: import('../domain').ProposedTerms } | null = null;
 
   const maxRounds = Math.min(3, config.maxRounds);
 
@@ -395,7 +409,20 @@ async function negotiateVendor(
     if (isSessionStopped(session)) return;
 
     session.currentRound = Math.max(session.currentRound, round);
-    const offer = await getOfferWithRecovery(session, vendor, round);
+
+    const vendorMessages = session.messages.filter((m) => m.vendorId === vendor.id);
+    const context: import('../vendors/simulator').VendorNegotiationContext = {
+      requestId: session.requestId,
+      roundNumber: round,
+      request: session.originalRequest,
+      lastCounterMessage: lastSentCounter?.message,
+      lastProposedTerms: lastSentCounter?.proposedTerms,
+      messageHistory: vendorMessages,
+      failureConsumed: false,
+      mode: adapters.executionMode === 'test-adapter' ? 'seeded' : config.vendorMode,
+    };
+
+    const offer = await getOfferWithRecovery(session, vendor, round, context);
 
     if (isSessionStopped(session)) return;
     if (!offer) continue;
@@ -629,6 +656,10 @@ async function negotiateVendor(
         };
 
         if (correctiveAction.type === 'SEND_COUNTER') {
+          lastSentCounter = {
+            message: correctiveAction.message,
+            proposedTerms: correctiveAction.proposedTerms,
+          };
           emitEvent(
             session,
             'COUNTEROFFER_SENT',
@@ -704,6 +735,10 @@ async function negotiateVendor(
     }
 
     if (proposed.action.type === 'SEND_COUNTER') {
+      lastSentCounter = {
+        message: proposed.action.message,
+        proposedTerms: proposed.action.proposedTerms,
+      };
       addSessionMessage(
         session,
         vendor.id,
@@ -739,12 +774,19 @@ async function runVendor(
   const rfqStartTime = Date.now();
   const rfq = sendRFQ(vendor, session.originalRequest);
 
+  const rfqToolName =
+    vendor.vendorType === 'http_api'
+      ? 'vendor.http_api.send_rfq'
+      : vendor.vendorType === 'ai_agent'
+      ? 'vendor.ai_sales_agent.send_rfq'
+      : 'vendor.send_rfq';
+
   recordTool(session, {
-    toolName: 'vendor.send_rfq',
+    toolName: rfqToolName,
     durationMs: Date.now() - rfqStartTime,
     success: true,
     retryCount: 0,
-    input: { vendorId: vendor.id },
+    input: { vendorId: vendor.id, vendorType: vendor.vendorType ?? 'ai_agent' },
   });
 
   emitEvent(session, 'RFQ_SENT', 'RFQ_SENT', `RFQ sent to ${vendor.name}.`, {

@@ -61,8 +61,13 @@ export function VendorComparisonTable({ session }) {
               return (
                 <tr key={vendor.id} className={isBest ? 'best-row' : ''}>
                   <td>
-                    <strong>{vendor.name}</strong>
-                    {isBest && <span className="best-tag">Best</span>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong>{vendor.name}</strong>
+                      {isBest && <span className="best-tag">Best</span>}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', opacity: 0.7, marginTop: '2px' }}>
+                      {vendor.channel || (vendor.vendorType === 'http_api' ? 'External REST API' : 'Autonomous AI Agent')}
+                    </div>
                   </td>
                   <td>{offer ? offer.unitPrice.toLocaleString('en-IN') : '—'}</td>
                   <td>{offer?.deliveryDays ?? '—'}</td>

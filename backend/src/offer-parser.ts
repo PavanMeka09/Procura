@@ -29,19 +29,19 @@ export function parseOffer(
 ): Offer {
   // Regex pattern extractions
   const unitPriceMatch = rawResponse
-    .match(/(?:₹\s*([\d,]+)|([\d,]+)\s*INR)/i)
+    .match(/(?:₹\s*([\d,]+)|([\d,]+)\s*(?:INR|rupees))/i)
     ?.slice(1)
     .find(Boolean);
 
   const deliveryMatch = rawResponse.match(
-    /(?:delivery|deliver(?:y)?\s+in)\s*(?:of\s*)?(\d+)\s*days?/i
+    /(?:delivery|deliver(?:y)?\s*(?:in|within|of)?)\s*(\d+)\s*days?/i
   )?.[1];
 
   const warrantyMatch = rawResponse.match(
-    /(\d+)\s*[- ]?month(?:s)?\s*warranty/i
+    /(\d+)\s*[- ]?month(?:s)?\s*(?:warranty|coverage|guarantee)/i
   )?.[1];
 
-  const advanceMatch = rawResponse.match(/(\d+)%\s*advance/i)?.[1];
+  const advanceMatch = rawResponse.match(/(\d+)%\s*(?:advance|upfront|down payment)/i)?.[1];
 
   // Fail-closed validation if essential commercial parameters are missing
   if (!unitPriceMatch || !deliveryMatch || !warrantyMatch || !advanceMatch) {
