@@ -43,7 +43,10 @@ export function extractRequirements(rawRequest: string): ProcurementRequest {
   ]);
 
   const explicitMaximumUnitPrice = extractNumberByPatterns(raw, [
-    /(?:maximum|max(?:imum)?|up\s+to)\s*(?:unit\s+)?(?:price|budget)?\s*₹?\s*([\d,]+)/i,
+    // Require an explicit price/budget label after "max" so phrases such as
+    // "max 20% advance" cannot be parsed as a ₹20 price ceiling.
+    /(?:maximum|max(?:imum)?)\s*(?:unit\s+)?(?:price|budget)\s*(?:of\s*)?₹?\s*([\d,]+)/i,
+    /(?:under|below|up\s+to)\s*₹?\s*([\d,]+)/i,
   ]);
 
   const maximumUnitPrice =
