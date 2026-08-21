@@ -17,7 +17,7 @@ bun run dev
 Frontend:
 
 ```bash
-cd client
+cd frontend
 bun install
 copy .env.example .env.local
 bun run dev
@@ -33,7 +33,7 @@ bun run test
 bun run typecheck
 bun run db:seed
 
-cd ../client
+cd ../frontend
 bun run build
 ```
 

@@ -10,7 +10,7 @@ This repository is the Procura project. The current codebase is a lightweight ba
 - Entry point: backend/src/server.ts
 - Config helpers: backend/src/utils/config.ts
 - Database schema: backend/src/db/schema.ts
-- Frontend/client work should be kept separate under the client/ directory unless a task explicitly requires integration work
+- Frontend work should be kept separate under the frontend/ directory unless a task explicitly requires integration work
 
 ## Core instruction: maintain the working context
 
