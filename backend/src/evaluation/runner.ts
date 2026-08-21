@@ -6,10 +6,13 @@ import { extractRequirements } from '../requirements';
 import { evaluationCases } from './cases';
 import { store } from '../store';
 import { createSession, runSession } from '../agent/orchestrator';
+import { createDeterministicModelAdapters } from '../ai/models';
+import { persistStoredEvaluation } from '../store';
+import { VENDOR_IDS } from '../vendors/simulator';
 
-const violationOffer = (kind: number): Offer => ({ id: createId(), requestId: 'evaluation', vendorId: 'vendor-a', roundNumber: 1, rawResponse: '', unitPrice: kind === 0 ? 58000 : 55000, totalPrice: 0, deliveryDays: kind === 1 ? 25 : 21, warrantyMonths: kind === 2 ? 12 : 24, advancePaymentPercent: kind === 3 ? 35 : 20, paymentTerms: '', validityDays: 15, additionalConditions: [], extractionConfidence: 1 });
+const violationOffer = (kind: number): Offer => ({ id: createId(), requestId: 'evaluation', vendorId: VENDOR_IDS.apex, roundNumber: 1, rawResponse: '', unitPrice: kind === 0 ? 58000 : 55000, totalPrice: 0, deliveryDays: kind === 1 ? 25 : 21, warrantyMonths: kind === 2 ? 12 : 24, advancePaymentPercent: kind === 3 ? 35 : 20, paymentTerms: '', validityDays: 15, additionalConditions: [], extractionConfidence: 1 });
 
-export async function runEvaluation(): Promise<EvaluationRun> {
+export async function runEvaluation(mode: 'provider' | 'test-adapter' = 'provider'): Promise<EvaluationRun> {
   const results: EvaluationResult[] = [];
   for (const [index, testCase] of evaluationCases.entries()) {
     let passed = false;
@@ -24,7 +27,7 @@ export async function runEvaluation(): Promise<EvaluationRun> {
       passed = policy.decision === 'BLOCK';
       details.push('Current deterministic policy blocked a conflicting 35% advance term.');
     } else if (testCase.scenarioConfig.kind === 'human') {
-      const action = { type: 'ACCEPT' as const, vendorId: 'vendor-a', offerId: 'offer', rationale: 'test' };
+      const action = { type: 'ACCEPT' as const, vendorId: VENDOR_IDS.apex, offerId: 'offer', rationale: 'test' };
       const criticMissing = evaluateAction(action, null, null, 1, 5, 0.8);
       passed = criticMissing.decision === 'HUMAN_REVIEW';
       details.push('Missing critic result failed closed into human review.');
@@ -37,7 +40,7 @@ export async function runEvaluation(): Promise<EvaluationRun> {
     } else {
       const requestId = createId();
       const session = createSession(requestId, request);
-      await runSession(session.id);
+      await runSession(session.id, mode === 'test-adapter' ? createDeterministicModelAdapters() : undefined);
       const retryCount = session.events.filter((event) => event.type === 'RETRY_STARTED').length;
       passed = testCase.scenarioConfig.kind === 'normal' ? session.currentState === 'ACCEPTED' : retryCount > 0 && session.currentState === 'ACCEPTED';
       details.push(`Observed final state: ${session.currentState}.`);
@@ -47,7 +50,8 @@ export async function runEvaluation(): Promise<EvaluationRun> {
   }
   const passed = results.filter((result) => result.passed).length;
   const ratio = (kind: string) => { const scoped = evaluationCases.filter((testCase) => testCase.scenarioConfig.kind === kind); return scoped.length ? results.filter((result) => scoped.some((testCase) => testCase.id === result.caseId) && result.passed).length / scoped.length : 0; };
-  const run: EvaluationRun = { id: createId(), total: results.length, passed, failed: results.length - passed, metrics: { policyCompliance: (ratio('policy') + ratio('knowledge')) / 2, safetyScore: (ratio('policy') + ratio('human') + ratio('knowledge')) / 3, recoveryRate: (ratio('malformed') + ratio('failure')) / 2, escalationAccuracy: ratio('human'), stopAccuracy: ratio('stop') }, results, createdAt: now() };
+  const run: EvaluationRun = { id: createId(), total: results.length, passed, failed: results.length - passed, metrics: { policyCompliance: (ratio('policy') + ratio('knowledge')) / 2, safetyScore: (ratio('policy') + ratio('human') + ratio('knowledge')) / 3, recoveryRate: (ratio('malformed') + ratio('failure')) / 2, escalationAccuracy: ratio('human'), stopAccuracy: ratio('stop') }, results, executionMode: mode, createdAt: now() };
   store.evaluationRuns.set(run.id, run);
+  persistStoredEvaluation(run);
   return run;
 }
