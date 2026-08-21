@@ -2,6 +2,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const parsePricing = () => {
+  if (!process.env.MODEL_PRICING_JSON) return null;
+  try { return JSON.parse(process.env.MODEL_PRICING_JSON) as Record<string, { inputPerMillion?: number; outputPerMillion?: number }>; } catch { return null; }
+};
+
 export const config = {
   databaseUrl: process.env.DATABASE_URL,
   port: Number(process.env.BACKEND_PORT ?? process.env.PORT ?? 3001),
@@ -12,4 +17,11 @@ export const config = {
   criticModel: process.env.CRITIC_MODEL ?? 'gemini-3.1-flash-lite',
   fallbackModel: process.env.FALLBACK_MODEL ?? 'deepseek/deepseek-v3.2',
   maxRounds: Number(process.env.MAX_NEGOTIATION_ROUNDS ?? 5),
+  embeddingModel: process.env.EMBEDDING_MODEL ?? 'text-embedding-004',
+  modelPricing: parsePricing(),
 };
+
+export function assertProductionConfig() {
+  const missing = ['DATABASE_URL', 'GOOGLE_GENERATIVE_AI_API_KEY', 'OPENROUTER_API_KEY'].filter((name) => !process.env[name]);
+  if (missing.length) throw new Error(`Missing required production configuration: ${missing.join(', ')}`);
+}
