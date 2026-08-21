@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowRight, RefreshCw } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 import { Metric } from '../common/Metric';
+import { OfferDetailsDrawer } from './OfferDetailsDrawer';
 
 function formatCurrency(amount) {
   if (amount == null) return '—';
@@ -18,6 +19,7 @@ export function BestOfferCard({ session }) {
   const offer = session.currentBestOffer;
   const vendor = session.vendors.find((item) => item.id === offer?.vendorId);
   const isAccepted = session.currentState === 'ACCEPTED';
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   return (
     <section className="panel best-offer">
@@ -49,7 +51,11 @@ export function BestOfferCard({ session }) {
             </span>
             <strong>{formatCurrency(offer.totalPrice)}</strong>
 
-            <button type="button" className="text-button">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setIsDrawerOpen(true)}
+            >
               View offer details <ArrowRight size={14} />
             </button>
           </div>
@@ -80,6 +86,15 @@ export function BestOfferCard({ session }) {
         <div className="empty-state">
           <RefreshCw size={18} className="spin" /> Waiting for the first vendor offer…
         </div>
+      )}
+      {offer && (
+        <OfferDetailsDrawer
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          session={session}
+          offer={offer}
+          vendor={vendor}
+        />
       )}
     </section>
   );
