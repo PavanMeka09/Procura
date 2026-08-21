@@ -218,7 +218,7 @@ export function seededVendors(requestId: string): Vendor[] {
             requestId,
             VENDOR_IDS.vertex,
             3,
-            55500,
+            55000,
             21,
             24,
             20,

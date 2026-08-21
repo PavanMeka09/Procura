@@ -109,4 +109,21 @@ describe('vendor subsystem & multi-agent counter-party engine', () => {
     // Northstar holds firm at or above its private floor price of ₹56,000
     expect(result.offer.unitPrice).toBeGreaterThanOrEqual(56000);
   });
+
+  test('seeded Vertex offers compliant ₹55,000 in round 3 meeting under ₹55,000 budget', async () => {
+    const vendor = seededVendors('req-5').find((v) => v.id === VENDOR_IDS.vertex)!;
+    const result = await getVendorResponse(vendor, {
+      requestId: 'req-5',
+      roundNumber: 3,
+      request: sampleRequest,
+      failureConsumed: true,
+      mode: 'seeded',
+    });
+
+    if (!('offer' in result)) throw new Error('Expected offer in round 3');
+    expect(result.offer.unitPrice).toBe(55000);
+    expect(result.offer.warrantyMonths).toBe(24);
+    expect(result.offer.deliveryDays).toBe(21);
+    expect(result.offer.advancePaymentPercent).toBe(20);
+  });
 });

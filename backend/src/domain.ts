@@ -262,6 +262,7 @@ export interface NegotiationSession {
   requestId: string;
   currentVendorId: string | null;
   currentRound: number;
+  maxRoundsPerVendor: number;
   originalRequest: ProcurementRequest;
   vendors: Vendor[];
   offers: Offer[];

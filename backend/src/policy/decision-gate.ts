@@ -26,7 +26,7 @@ export function evaluateAction(
   if (currentRound >= maxRounds) {
     return {
       decision: 'STOP',
-      reason: `Maximum negotiation rounds reached (${maxRounds}).`,
+      reason: `Maximum negotiation rounds reached (${maxRounds} per vendor).`,
     };
   }
 

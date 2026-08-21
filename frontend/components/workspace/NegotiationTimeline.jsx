@@ -33,12 +33,22 @@ function resolveEventTone(eventType, event) {
  */
 export function NegotiationTimeline({ session }) {
   const recentEvents = session.events.slice(-12);
+  const activeVendor = session.vendors.find((v) => v.id === session.currentVendorId);
+  const maxRounds = session.maxRoundsPerVendor || 3;
+  const currentRoundDisplay = session.currentRound ? Math.min(session.currentRound, maxRounds) : 1;
+  const isTerminal = ['ACCEPTED', 'STOPPED', 'FAILED'].includes(session.currentState);
+
+  const roundBadgeText = isTerminal
+    ? `${session.offers.length} offer${session.offers.length === 1 ? '' : 's'} (${session.vendors.length} vendors · max ${maxRounds} rounds/vendor)`
+    : activeVendor
+    ? `Round ${currentRoundDisplay} of ${maxRounds} (${activeVendor.name})`
+    : `Round ${currentRoundDisplay} of ${maxRounds} (per vendor)`;
 
   return (
     <section className="panel timeline-panel">
       <div className="panel-heading">
         <h3>Negotiation timeline</h3>
-        <span className="muted">Round {Math.min(session.currentRound, 5)} of 5</span>
+        <span className="muted">{roundBadgeText}</span>
       </div>
 
       {recentEvents.length > 0 ? (

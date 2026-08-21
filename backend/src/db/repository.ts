@@ -727,6 +727,7 @@ export async function hydrateSession(
     requestId: sessionRow.requestId,
     currentVendorId: sessionRow.currentVendorId,
     currentRound: sessionRow.currentRound,
+    maxRoundsPerVendor: config.maxRoundsPerVendor,
     originalRequest: request,
     vendors: sessionVendors,
     offers,

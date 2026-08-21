@@ -9,6 +9,7 @@ import { createSession, runSession } from '../agent/orchestrator';
 import { createDeterministicModelAdapters } from '../ai/models';
 import { persistStoredEvaluation } from '../store';
 import { VENDOR_IDS } from '../vendors/simulator';
+import { config } from '../utils/config';
 
 /**
  * Creates synthetic offers that trigger specific policy constraint violations for testing.
@@ -62,7 +63,7 @@ export async function runEvaluation(
         offerId: 'offer',
         rationale: 'test',
       };
-      const criticMissing = evaluateAction(action, null, null, 1, 5, 0.8);
+      const criticMissing = evaluateAction(action, null, null, 1, config.maxRoundsPerVendor, 0.8);
       passed = criticMissing.decision === 'HUMAN_REVIEW';
       details.push('Missing critic result failed closed into human review.');
     } else if (testCase.scenarioConfig.kind === 'stop') {
@@ -79,8 +80,8 @@ export async function runEvaluation(
         action,
         critic,
         { decision: 'PASS', violations: [], warnings: [], evidence: [] },
-        5,
-        5,
+        config.maxRoundsPerVendor,
+        config.maxRoundsPerVendor,
         0.1
       );
       passed = gate.decision === 'STOP';

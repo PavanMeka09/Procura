@@ -1,6 +1,6 @@
 import type { NegotiationSession, Offer } from '../domain';
+import { config } from '../utils/config';
 
-const MAX_ALLOWED_ROUNDS = 5;
 const MAXIMUM_RISK_THRESHOLD = 0.9;
 
 /**
@@ -9,11 +9,12 @@ const MAXIMUM_RISK_THRESHOLD = 0.9;
  */
 export function shouldStop(
   session: NegotiationSession,
-  offer?: Offer
+  offer?: Offer,
+  maxRoundsPerVendor: number = config.maxRoundsPerVendor
 ): string | null {
-  // Condition 1: Ceiling on negotiation rounds reached
-  if (session.currentRound >= MAX_ALLOWED_ROUNDS) {
-    return `Maximum negotiation rounds reached (${MAX_ALLOWED_ROUNDS}).`;
+  // Condition 1: Ceiling on negotiation rounds reached for current vendor
+  if (session.currentRound >= maxRoundsPerVendor) {
+    return `Maximum negotiation rounds reached (${maxRoundsPerVendor} per vendor).`;
   }
 
   // Condition 2: Elevated composite risk score exceeds safety limits

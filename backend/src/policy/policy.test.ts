@@ -20,8 +20,12 @@ describe('policy engine', () => {
 });
 
 describe('decision gate', () => {
-  test('pass plus pass executes', () => expect(evaluateAction(accept, passCritic, validateOffer(makeOffer(), request), 1, 5, 0.1).decision).toBe('EXECUTE'));
-  test('critic block blocks', () => expect(evaluateAction(accept, { ...passCritic, decision: 'BLOCK' }, validateOffer(makeOffer(), request), 1, 5, 0.1).decision).toBe('BLOCK'));
-  test('missing critic fails closed', () => expect(evaluateAction(accept, null, validateOffer(makeOffer(), request), 1, 5, 0.1).decision).toBe('HUMAN_REVIEW'));
-  test('max rounds stops', () => expect(evaluateAction(accept, passCritic, validateOffer(makeOffer(), request), 5, 5, 0.1).decision).toBe('STOP'));
+  test('pass plus pass executes', () => expect(evaluateAction(accept, passCritic, validateOffer(makeOffer(), request), 1, 3, 0.1).decision).toBe('EXECUTE'));
+  test('critic block blocks', () => expect(evaluateAction(accept, { ...passCritic, decision: 'BLOCK' }, validateOffer(makeOffer(), request), 1, 3, 0.1).decision).toBe('BLOCK'));
+  test('missing critic fails closed', () => expect(evaluateAction(accept, null, validateOffer(makeOffer(), request), 1, 3, 0.1).decision).toBe('HUMAN_REVIEW'));
+  test('max rounds stops', () => {
+    const result = evaluateAction(accept, passCritic, validateOffer(makeOffer(), request), 3, 3, 0.1);
+    expect(result.decision).toBe('STOP');
+    expect(result.reason).toBe('Maximum negotiation rounds reached (3 per vendor).');
+  });
 });

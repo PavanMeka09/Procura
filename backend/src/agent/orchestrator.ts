@@ -117,6 +117,7 @@ export function createSession(
     requestId,
     currentVendorId: null,
     currentRound: 0,
+    maxRoundsPerVendor: config.maxRoundsPerVendor,
     originalRequest: request,
     vendors,
     offers: [],
@@ -260,7 +261,7 @@ async function getOfferWithRecovery(
   round: number,
   context?: import('../vendors/simulator').VendorNegotiationContext
 ): Promise<Offer | null> {
-  let failureConsumed = false;
+  let failureConsumed = context?.failureConsumed ?? false;
 
   const toolName =
     vendor.vendorType === 'http_api'
@@ -282,8 +283,8 @@ async function getOfferWithRecovery(
           requestId: session.requestId,
           roundNumber: round,
           request: session.originalRequest,
-          failureConsumed,
           ...context,
+          failureConsumed,
         });
         toolSucceeded = !('failure' in response);
       } finally {
@@ -403,12 +404,13 @@ async function negotiateVendor(
   let hasBlockedActionOnce = false;
   let lastSentCounter: { message: string; proposedTerms?: import('../domain').ProposedTerms } | null = null;
 
-  const maxRounds = Math.min(3, config.maxRounds);
+  let vendorFailureConsumed = false;
+  const maxRounds = config.maxRoundsPerVendor;
 
   for (let round = 1; round <= maxRounds; round += 1) {
     if (isSessionStopped(session)) return;
 
-    session.currentRound = Math.max(session.currentRound, round);
+    session.currentRound = round;
 
     const vendorMessages = session.messages.filter((m) => m.vendorId === vendor.id);
     const context: import('../vendors/simulator').VendorNegotiationContext = {
@@ -418,11 +420,12 @@ async function negotiateVendor(
       lastCounterMessage: lastSentCounter?.message,
       lastProposedTerms: lastSentCounter?.proposedTerms,
       messageHistory: vendorMessages,
-      failureConsumed: false,
+      failureConsumed: vendorFailureConsumed,
       mode: adapters.executionMode === 'test-adapter' ? 'seeded' : config.vendorMode,
     };
 
     const offer = await getOfferWithRecovery(session, vendor, round, context);
+    vendorFailureConsumed = true;
 
     if (isSessionStopped(session)) return;
     if (!offer) continue;
@@ -621,7 +624,7 @@ async function negotiateVendor(
       criticResult,
       policyResult,
       round - 1,
-      config.maxRounds,
+      config.maxRoundsPerVendor,
       session.riskScore
     );
 
@@ -1000,7 +1003,7 @@ export async function resumeSession(
     critic.result,
     policy,
     Math.max(0, session.currentRound - 1),
-    config.maxRounds,
+    config.maxRoundsPerVendor,
     0
   );
 
