@@ -1,7 +1,7 @@
 import { critique, proposeAction, type ModelAdapters } from '../ai/models';
 import { evaluateAction } from '../policy/decision-gate';
 import { validateAction, validateOffer } from '../policy/engine';
-import { retrieveKnowledge } from '../retrieval/search';
+import { retrieveKnowledge, searchKnowledge } from '../retrieval/search';
 import { appendEvent, appendMessage, store, upsertOffer } from '../store';
 import {
   persistModelRun,
@@ -24,8 +24,9 @@ import {
   searchVendors,
   sendNegotiationMessage,
   sendRFQ,
+  type VendorNegotiationContext,
 } from '../vendors/simulator';
-import { parseOffer } from '../offer-parser';
+import { parseOffer, parseOfferRegexFallback } from '../offer-parser';
 import { config } from '../utils/config';
 import { shouldStop } from './stop-conditions';
 
@@ -259,7 +260,8 @@ async function getOfferWithRecovery(
   session: NegotiationSession,
   vendor: Vendor,
   round: number,
-  context?: import('../vendors/simulator').VendorNegotiationContext
+  context?: VendorNegotiationContext,
+  adapters?: ModelAdapters
 ): Promise<Offer | null> {
   let failureConsumed = context?.failureConsumed ?? false;
 
@@ -326,13 +328,21 @@ async function getOfferWithRecovery(
         );
 
         try {
-          return await parseOffer(
-            response.raw,
-            session.requestId,
-            vendor,
-            round,
-            session.originalRequest.quantity
-          );
+          return adapters?.executionMode === 'test-adapter'
+            ? parseOfferRegexFallback(
+                response.raw,
+                session.requestId,
+                vendor,
+                round,
+                session.originalRequest.quantity
+              )
+            : await parseOffer(
+                response.raw,
+                session.requestId,
+                vendor,
+                round,
+                session.originalRequest.quantity
+              );
         } catch (error) {
           if (attempt === 0) {
             failureConsumed = true;
@@ -424,7 +434,7 @@ async function negotiateVendor(
       mode: adapters.executionMode === 'test-adapter' ? 'seeded' : config.vendorMode,
     };
 
-    const offer = await getOfferWithRecovery(session, vendor, round, context);
+    const offer = await getOfferWithRecovery(session, vendor, round, context, adapters);
     vendorFailureConsumed = true;
 
     if (isSessionStopped(session)) return;
@@ -892,10 +902,16 @@ export async function runSession(
     );
 
     // Knowledge & policy retrieval
-    const retrieval = await retrieveKnowledge(
-      'business hardware advance warranty delivery',
-      { category: 'Business hardware' }
-    );
+    const retrieval =
+      adapters.executionMode === 'test-adapter'
+        ? {
+            items: searchKnowledge('business hardware advance warranty delivery'),
+            mode: 'lexical' as const,
+          }
+        : await retrieveKnowledge(
+            'business hardware advance warranty delivery',
+            { category: 'Business hardware' }
+          );
 
     if (session.currentState === 'STOPPED') return;
 

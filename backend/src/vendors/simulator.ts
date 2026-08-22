@@ -52,13 +52,41 @@ function createSyntheticOffer(
  * Returns autonomous vendor profiles equipped with private commercial constraints,
  * sales personas, and fallback multi-round concession curves.
  */
-export function seededVendors(requestId: string): Vendor[] {
+export function seededVendors(
+  requestId: string,
+  request?: ProcurementRequest
+): Vendor[] {
+  const targetPrice = request?.targetUnitPrice ?? request?.maximumUnitPrice ?? 55000;
+  const maxPrice = request?.maximumUnitPrice ?? 57000;
+  const delivery = request?.deliveryDays ?? 21;
+  const warranty = request?.minimumWarrantyMonths ?? 24;
+  const maxAdvance = request?.maximumAdvancePaymentPercent ?? 20;
+  const category = request?.item ?? 'Business hardware';
+
+  const apexRound1Price = request ? Math.round(maxPrice * 1.08) : 60000;
+  const apexRound2Price = request ? Math.round(maxPrice * 1.02) : 57000;
+  const apexRound3Price = request ? Math.round(targetPrice * 1.01) : 56500;
+  const apexFloorPrice = request ? Math.round(targetPrice * 1.01) : 55500;
+  const apexDeliveryDays = request ? Math.max(1, delivery - 1) : 20;
+
+  const northstarRound1Price = request ? Math.round(maxPrice * 1.10) : 62000;
+  const northstarRound2Price = request ? Math.round(maxPrice * 1.03) : 57500;
+  const northstarRound3Price = request ? Math.round(targetPrice * 1.01) : 56000;
+  const northstarFloorPrice = request ? Math.round(targetPrice * 1.01) : 56000;
+  const northstarDeliveryDays = request ? Math.max(1, Math.floor(delivery * 0.7)) : 14;
+  const northstarWarrantyMonths = request ? Math.max(warranty, 36) : 36;
+
+  const vertexRound1Price = request ? Math.round(maxPrice * 1.04) : 58000;
+  const vertexRound2Price = request ? Math.round(maxPrice * 1.01) : 56000;
+  const vertexRound3Price = request ? targetPrice : 55000;
+  const vertexFloorPrice = request ? targetPrice : 55000;
+
   return [
     {
       id: VENDOR_IDS.apex,
       slug: 'vendor-a',
       name: 'Apex Devices',
-      category: 'Business hardware',
+      category,
       approved: true,
       reliabilityScore: 0.84,
       contact: 'sales@apex.example',
@@ -67,23 +95,22 @@ export function seededVendors(requestId: string): Vendor[] {
       salesPersona:
         'Fast-paced commercial hardware supplier. Prioritizes deal volume and quick closure over maximum margin; willing to make larger price concessions if advance payment terms are met.',
       privateConstraints: {
-        floorUnitPrice: 55500,
-        targetUnitPrice: 60000,
-        minAdvancePercent: 20,
-        minDeliveryDays: 20,
-        maxWarrantyMonths: 24,
+        floorUnitPrice: apexFloorPrice,
+        targetUnitPrice: apexRound1Price,
+        minAdvancePercent: maxAdvance,
+        minDeliveryDays: apexDeliveryDays,
+        maxWarrantyMonths: warranty,
         concessionStrategy: 'eager_closer',
-        salesPersona:
-          'Apex Devices sales director. Open to cutting price down to ₹55,500 for rapid closing.',
+        salesPersona: `Apex Devices sales director. Open to cutting price down to ₹${apexFloorPrice.toLocaleString('en-IN')} for rapid closing.`,
       },
       behavior: {
         initial: createSyntheticOffer(
           requestId,
           VENDOR_IDS.apex,
           1,
-          60000,
-          20,
-          24,
+          apexRound1Price,
+          apexDeliveryDays,
+          warranty,
           50,
           '50% advance, balance before dispatch'
         ),
@@ -92,9 +119,9 @@ export function seededVendors(requestId: string): Vendor[] {
             requestId,
             VENDOR_IDS.apex,
             2,
-            57000,
-            20,
-            24,
+            apexRound2Price,
+            apexDeliveryDays,
+            warranty,
             30,
             '30% advance, balance on dispatch'
           ),
@@ -102,11 +129,11 @@ export function seededVendors(requestId: string): Vendor[] {
             requestId,
             VENDOR_IDS.apex,
             3,
-            56500,
-            20,
-            24,
-            20,
-            '20% advance, balance on delivery'
+            apexRound3Price,
+            apexDeliveryDays,
+            warranty,
+            maxAdvance,
+            `${maxAdvance}% advance, balance on delivery`
           ),
         ],
         failure: 'DELAY_ONCE',
@@ -116,7 +143,7 @@ export function seededVendors(requestId: string): Vendor[] {
       id: VENDOR_IDS.northstar,
       slug: 'vendor-b',
       name: 'Northstar IT',
-      category: 'Business hardware',
+      category,
       approved: true,
       reliabilityScore: 0.91,
       contact: 'rfq@northstar.example',
@@ -125,46 +152,45 @@ export function seededVendors(requestId: string): Vendor[] {
       salesPersona:
         'Enterprise IT hardware distributor. Backed by extensive 36-month warranties and rapid 14-day delivery; enforces strict minimum margin floors.',
       privateConstraints: {
-        floorUnitPrice: 56000,
-        targetUnitPrice: 62000,
-        minAdvancePercent: 20,
-        minDeliveryDays: 14,
-        maxWarrantyMonths: 36,
+        floorUnitPrice: northstarFloorPrice,
+        targetUnitPrice: northstarRound1Price,
+        minAdvancePercent: maxAdvance,
+        minDeliveryDays: northstarDeliveryDays,
+        maxWarrantyMonths: northstarWarrantyMonths,
         concessionStrategy: 'tough_bargainer',
-        salesPersona:
-          'Northstar IT enterprise sales VP. Emphasizes superior 36-month warranty and rapid fulfillment; holds a firm floor of ₹56,000.',
+        salesPersona: `Northstar IT enterprise sales VP. Emphasizes superior ${northstarWarrantyMonths}-month warranty and rapid fulfillment; holds a firm floor of ₹${northstarFloorPrice.toLocaleString('en-IN')}.`,
       },
       behavior: {
         initial: createSyntheticOffer(
           requestId,
           VENDOR_IDS.northstar,
           1,
-          62000,
-          14,
-          36,
-          20,
-          '20% advance, balance on delivery'
+          northstarRound1Price,
+          northstarDeliveryDays,
+          northstarWarrantyMonths,
+          maxAdvance,
+          `${maxAdvance}% advance, balance on delivery`
         ),
         rounds: [
           createSyntheticOffer(
             requestId,
             VENDOR_IDS.northstar,
             2,
-            57500,
-            14,
-            36,
-            20,
-            '20% advance, balance on delivery'
+            northstarRound2Price,
+            northstarDeliveryDays,
+            northstarWarrantyMonths,
+            maxAdvance,
+            `${maxAdvance}% advance, balance on delivery`
           ),
           createSyntheticOffer(
             requestId,
             VENDOR_IDS.northstar,
             3,
-            56000,
-            14,
-            36,
-            20,
-            '20% advance, balance on delivery'
+            northstarRound3Price,
+            northstarDeliveryDays,
+            northstarWarrantyMonths,
+            maxAdvance,
+            `${maxAdvance}% advance, balance on delivery`
           ),
         ],
         failure: 'MALFORMED_ONCE',
@@ -174,20 +200,20 @@ export function seededVendors(requestId: string): Vendor[] {
       id: VENDOR_IDS.vertex,
       slug: 'vendor-c',
       name: 'Vertex Systems',
-      category: 'Business hardware',
+      category,
       approved: true,
       reliabilityScore: 0.96,
       contact: 'commercial@vertex.example',
       vendorType: 'ai_agent',
       channel: 'Autonomous AI Sales Agent',
       salesPersona:
-        'Established IT systems integrator. Offers balanced commercial terms with predictable step-by-step price concessions down to ₹55,000.',
+        'Established IT systems integrator. Offers balanced commercial terms with predictable step-by-step price concessions down to target price.',
       privateConstraints: {
-        floorUnitPrice: 55000,
-        targetUnitPrice: 58000,
-        minAdvancePercent: 20,
-        minDeliveryDays: 21,
-        maxWarrantyMonths: 24,
+        floorUnitPrice: vertexFloorPrice,
+        targetUnitPrice: vertexRound1Price,
+        minAdvancePercent: maxAdvance,
+        minDeliveryDays: delivery,
+        maxWarrantyMonths: warranty,
         concessionStrategy: 'balanced',
         salesPersona:
           'Vertex Systems commercial account manager. Bids competitively with high reliability and balanced concession curves.',
@@ -197,32 +223,32 @@ export function seededVendors(requestId: string): Vendor[] {
           requestId,
           VENDOR_IDS.vertex,
           1,
-          58000,
-          21,
-          24,
-          20,
-          '20% advance, balance on delivery'
+          vertexRound1Price,
+          delivery,
+          warranty,
+          maxAdvance,
+          `${maxAdvance}% advance, balance on delivery`
         ),
         rounds: [
           createSyntheticOffer(
             requestId,
             VENDOR_IDS.vertex,
             2,
-            56000,
-            21,
-            24,
-            20,
-            '20% advance, balance on delivery'
+            vertexRound2Price,
+            delivery,
+            warranty,
+            maxAdvance,
+            `${maxAdvance}% advance, balance on delivery`
           ),
           createSyntheticOffer(
             requestId,
             VENDOR_IDS.vertex,
             3,
-            55000,
-            21,
-            24,
-            20,
-            '20% advance, balance on delivery'
+            vertexRound3Price,
+            delivery,
+            warranty,
+            maxAdvance,
+            `${maxAdvance}% advance, balance on delivery`
           ),
         ],
         failure: 'TEMPORARY_FAILURE_ONCE',
@@ -235,16 +261,17 @@ export function searchVendors(
   request: ProcurementRequest,
   requestId: string
 ): Vendor[] {
-  return seededVendors(requestId).filter(
-    (vendor) => vendor.category.toLowerCase().includes('hardware') && vendor.approved
+  return seededVendors(requestId, request).filter(
+    (vendor) => vendor.approved
   );
 }
 
 export function getVendorProfile(
   vendorId: string,
-  requestId: string
+  requestId: string,
+  request?: ProcurementRequest
 ): Vendor | null {
-  return seededVendors(requestId).find((v) => v.id === vendorId) ?? null;
+  return seededVendors(requestId, request).find((v) => v.id === vendorId) ?? null;
 }
 
 export function sendRFQ(vendor: Vendor, request: ProcurementRequest): string {

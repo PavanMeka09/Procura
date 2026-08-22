@@ -21,6 +21,13 @@ export interface OfferParsingContext {
   quantity: number;
 }
 
+const parsedOfferSchema = z.object({
+  unitPrice: z.number().positive(),
+  deliveryDays: z.number().int().positive(),
+  warrantyMonths: z.number().int().positive(),
+  advancePaymentPercent: z.number().min(0).max(100),
+});
+
 /**
  * Zod schema for LLM structured vendor offer extraction.
  */

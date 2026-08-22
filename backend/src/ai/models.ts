@@ -451,8 +451,11 @@ function deterministicProposal(
     };
   }
 
-  const baseTarget = session.targetUnitPrice ?? 55000;
-  const priceReduction = vendor?.slug === 'vendor-c' ? 2500 : 3000;
+  const baseTarget = session.targetUnitPrice ?? session.maximumUnitPrice;
+  const priceReduction = Math.max(
+    50,
+    Math.round(session.maximumUnitPrice * (vendor?.slug === 'vendor-c' ? 0.04 : 0.05))
+  );
 
   let nextPrice: number;
   if (isCompetitorBest && bestOffer && bestOffer.unitPrice < offer.unitPrice) {
@@ -472,7 +475,7 @@ function deterministicProposal(
     deliveryDays: Math.min(offer.deliveryDays, session.maximumDeliveryDays),
     warrantyMonths: Math.max(offer.warrantyMonths, session.minimumWarrantyMonths),
     advancePaymentPercent: session.maximumAdvancePaymentPercent,
-    paymentTerms: '20% advance, balance on delivery',
+    paymentTerms: `${session.maximumAdvancePaymentPercent}% advance, balance on delivery`,
   };
 
   let message: string;

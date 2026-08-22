@@ -97,12 +97,24 @@ function parseIndianPriceFallback(raw: string): number | null {
     return factor * 100000;
   }
 
-  const explicitMaxMatch = raw.match(
-    /(?:maximum|max(?:imum)?)\s*(?:unit\s+)?(?:price|budget)\s*(?:of\s*)?₹?\s*([\d,]+)/i
-  );
-  if (explicitMaxMatch?.[1]) return Number(explicitMaxMatch[1].replace(/,/g, ''));
+  return null;
+}
 
-  const numMatch = raw.match(/(?:target|under|below|at|of)\s*₹?\s*([\d,]+)/i);
+function parseExplicitTargetPrice(raw: string): number | null {
+  const targetMatch = raw.match(
+    /(?:target\s*(?:unit\s*)?price|target)\s*(?:of|is|at|inr|₹)?\s*(?:₹\s*)?([\d,]+)/i
+  );
+  if (targetMatch?.[1]) return Number(targetMatch[1].replace(/,/g, ''));
+  return null;
+}
+
+function parseExplicitMaxPrice(raw: string): number | null {
+  const maxMatch = raw.match(
+    /(?:hard\s*maximum|hard\s*cap|max(?:imum)?\s*(?:unit\s+)?(?:price|budget)?|budget|capped\s*at)\s*(?:of|is|at|inr|₹)?\s*(?:₹\s*)?([\d,]+)/i
+  );
+  if (maxMatch?.[1]) return Number(maxMatch[1].replace(/,/g, ''));
+
+  const numMatch = raw.match(/(?:under|below|at|of)\s*₹?\s*([\d,]+)/i);
   if (numMatch?.[1]) return Number(numMatch[1].replace(/,/g, ''));
 
   const directRupeeMatch = raw.match(/₹\s*([\d,]+)/i);
@@ -116,12 +128,12 @@ function parseIndianPriceFallback(raw: string): number | null {
  */
 function parseTimelineDaysFallback(raw: string): number {
   const weeksMatch = raw.match(
-    /(?:within|in|needed in|delivery\s*(?:within|by)?)\s*(\d+)\s*weeks?/i
+    /(?:within|in|needed in|delivery\s*(?:within|by|inside)?)\s*(\d+)\s*weeks?/i
   );
   if (weeksMatch?.[1]) return Number(weeksMatch[1]) * 7;
 
   const wordWeeksMatch = raw.match(
-    /(?:within|in|needed in|delivery\s*(?:within|by)?)\s*(one|two|three|four|five|six|seven|eight)\s*weeks?/i
+    /(?:within|in|needed in|delivery\s*(?:within|by|inside)?)\s*(one|two|three|four|five|six|seven|eight)\s*weeks?/i
   );
   if (wordWeeksMatch?.[1]) {
     const wordMap: Record<string, number> = {
@@ -138,7 +150,7 @@ function parseTimelineDaysFallback(raw: string): number {
   }
 
   const daysMatch = raw.match(
-    /(?:within|in|delivery\s*(?:within|by)?)\s*(\d+)\s*days?/i
+    /(?:within|in|inside|delivery\s*(?:within|by|inside)?)\s*(\d+)\s*days?/i
   );
   if (daysMatch?.[1]) return Number(daysMatch[1]);
 
@@ -179,13 +191,13 @@ function parseWarrantyMonthsFallback(raw: string): number {
  */
 function parseQuantityFallback(raw: string): number {
   const numUnitsMatch = raw.match(
-    /([\d,]+)\s*(?:remote\s+engineers\s+with\s+)?(?:business\s+)?(?:laptops?|workstations?|units?|pieces?|monitors?|devices?|engineers)/i
+    /([\d,]+)\s*(?:remote\s+engineers\s+with\s+|senior\s+engineers\s+with\s+)?(?:business\s+)?(?:laptops?|workstations?|units?|pieces?|monitors?|devices?|engineers|servers?|chairs?|gateways?|cameras?|switches?|arrays?|controllers?|terminals?|tablets?|turnstiles?|appliances?|headsets?|meters?|printers?|tools?)/i
   );
   if (numUnitsMatch?.[1]) {
     return Number(numUnitsMatch[1].replace(/,/g, ''));
   }
 
-  const buyNumMatch = raw.match(/(?:buy|purchase|outfitting|source|order)\s+([\d,]+)/i);
+  const buyNumMatch = raw.match(/(?:buy|purchase|outfitting|source|order|procure|acquire)\s+([\d,]+)/i);
   if (buyNumMatch?.[1]) {
     return Number(buyNumMatch[1].replace(/,/g, ''));
   }
@@ -197,15 +209,44 @@ function parseQuantityFallback(raw: string): number {
  * Fallback helper to parse item name.
  */
 function parseItemNameFallback(raw: string): string {
-  if (raw.toLowerCase().includes('workstation')) return 'high-end workstations';
-  if (raw.toLowerCase().includes('monitor')) return 'monitors';
+  if (raw.toLowerCase().includes('server')) return 'enterprise GPU compute servers';
+  if (raw.toLowerCase().includes('chair') || raw.toLowerCase().includes('furniture')) return 'ergonomic executive mesh chairs';
+  if (raw.toLowerCase().includes('sim') || raw.toLowerCase().includes('gateway')) return 'industrial 5G M2M SIM gateways';
+  if (raw.toLowerCase().includes('workstation') || raw.toLowerCase().includes('macbook')) return 'developer workstations';
+  if (raw.toLowerCase().includes('camera') || raw.toLowerCase().includes('surveillance') || raw.toLowerCase().includes('cctv')) return '4K PTZ surveillance cameras';
+  if (raw.toLowerCase().includes('switch')) return 'enterprise network switches';
+  if (raw.toLowerCase().includes('storage') || raw.toLowerCase().includes('nas')) return 'high-capacity NAS storage arrays';
+  if (raw.toLowerCase().includes('generator') || raw.toLowerCase().includes('controller')) return 'diesel generator controllers';
+  if (raw.toLowerCase().includes('scanner')) return 'barcode scanner terminals';
+  if (raw.toLowerCase().includes('tablet')) return 'ruggedized warehouse tablets';
+  if (raw.toLowerCase().includes('turnstile') || raw.toLowerCase().includes('access control')) return 'biometric access control turnstiles';
+  if (raw.toLowerCase().includes('firewall')) return 'enterprise firewall appliances';
+  if (raw.toLowerCase().includes('headset')) return 'noise-cancelling office headsets';
+  if (raw.toLowerCase().includes('cooling')) return 'rack cooling distribution units';
+  if (raw.toLowerCase().includes('monitor') || raw.toLowerCase().includes('display')) return 'commercial display monitors';
+  if (raw.toLowerCase().includes('hsm') || raw.toLowerCase().includes('cryptographic')) return 'cryptographic HSM modules';
+  if (raw.toLowerCase().includes('meter')) return 'smart grid meters';
+  if (raw.toLowerCase().includes('printer')) return 'industrial barcode printers';
+  if (raw.toLowerCase().includes('laser') || raw.toLowerCase().includes('calibration')) return 'laser calibration tools';
   if (raw.toLowerCase().includes('laptop')) return 'business laptops';
 
   const itemMatch = raw.match(
-    /(?:buy|purchase|source)\s+(?:\d+\s+)?(.+?)(?:\s+(?:under|below|within|with|at\s+least|and\s+no\s+more|needed\s+in)|$)/i
+    /(?:buy|purchase|source|order|procure|acquire)\s+(?:\d+\s+)?(.+?)(?:\s+(?:under|below|within|with|at\s+least|and\s+no\s+more|needed\s+in)|$)/i
   );
   const item = itemMatch?.[1]?.trim().replace(/[,.]$/, '');
   return item || 'business hardware';
+}
+
+function parseAdvancePaymentFallback(raw: string): number {
+  const match = raw.match(
+    /(?:advance\s*payment\s*(?:capped\s*at|max(?:imum)?|limit|of)?|max(?:imum)?|no\s*more\s*than|up\s*to|capped\s*at|strict\s*max)\s*(\d+)\s*%\s*(?:advance|upfront|deposit)?/i
+  );
+  if (match?.[1]) return Number(match[1]);
+
+  const altMatch = raw.match(/(\d+)\s*%\s*(?:advance|upfront|deposit)/i);
+  if (altMatch?.[1]) return Number(altMatch[1]);
+
+  return DEFAULT_ADVANCE_PAYMENT_PERCENT;
 }
 
 /**
@@ -218,28 +259,23 @@ export function extractRequirementsRegexFallback(rawRequest: string): Procuremen
   }
 
   const quantity = parseQuantityFallback(raw);
-  const parsedPrice = parseIndianPriceFallback(raw);
+  const colloquialPrice = parseIndianPriceFallback(raw);
+  const explicitTarget = parseExplicitTargetPrice(raw);
+  const explicitMax = parseExplicitMaxPrice(raw);
 
-  const targetUnitPrice = parsedPrice ?? DEFAULT_TARGET_PRICE;
-  const maximumUnitPrice = parsedPrice ?? (DEFAULT_TARGET_PRICE + DEFAULT_PRICE_BUFFER);
+  const parsedTargetPrice = colloquialPrice ?? explicitTarget ?? explicitMax ?? DEFAULT_TARGET_PRICE;
+  const parsedMaxPrice = explicitMax ?? colloquialPrice ?? (explicitTarget ? explicitTarget + DEFAULT_PRICE_BUFFER : DEFAULT_TARGET_PRICE + DEFAULT_PRICE_BUFFER);
 
   const deliveryDays = parseTimelineDaysFallback(raw);
   const warranty = parseWarrantyMonthsFallback(raw);
-
-  const advanceMatch = raw.match(
-    /(?:no\s+more\s+than|max(?:imum)?|up\s+to)?\s*(\d+)\s*%\s*(?:advance|upfront)/i
-  );
-  const maximumAdvancePaymentPercent = advanceMatch?.[1]
-    ? Number(advanceMatch[1])
-    : DEFAULT_ADVANCE_PAYMENT_PERCENT;
-
+  const maximumAdvancePaymentPercent = parseAdvancePaymentFallback(raw);
   const item = parseItemNameFallback(raw);
 
   return {
     item,
     quantity,
-    targetUnitPrice: parsedPrice ? targetUnitPrice : null,
-    maximumUnitPrice,
+    targetUnitPrice: explicitTarget ?? (colloquialPrice ? parsedTargetPrice : null),
+    maximumUnitPrice: parsedMaxPrice,
     deliveryDays,
     minimumWarrantyMonths: warranty,
     maximumAdvancePaymentPercent,
