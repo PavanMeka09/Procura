@@ -154,8 +154,29 @@ export function EvaluationLab() {
                 <tbody>
                   {run.results.map((result) => (
                     <tr key={result.caseId}>
-                      <td>
-                        <strong>{result.caseId}</strong>
+                      <td style={{ minWidth: '180px' }}>
+                        <div>
+                          <strong>{result.caseId}</strong>
+                          {result.category && (
+                            <span
+                              style={{
+                                marginLeft: '8px',
+                                fontSize: '0.72rem',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                color: 'var(--muted, #888)',
+                              }}
+                            >
+                              {result.category}
+                            </span>
+                          )}
+                        </div>
+                        {result.name && (
+                          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted, #999)', marginTop: '3px' }}>
+                            {result.name}
+                          </div>
+                        )}
                       </td>
                       <td>{result.expectedBehavior}</td>
                       <td>
@@ -163,7 +184,7 @@ export function EvaluationLab() {
                           {result.passed ? 'Passed' : 'Failed'}
                         </StatusBadge>
                       </td>
-                      <td>{result.details.join(' ')}</td>
+                      <td style={{ fontSize: '0.86rem' }}>{result.details.join(' ')}</td>
                     </tr>
                   ))}
                 </tbody>
