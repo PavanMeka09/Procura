@@ -116,54 +116,25 @@ export function validateAction(
   }
 
   // Project proposed counteroffer terms onto the existing or synthetic offer
-  const proposedOffer: Offer = offer
-    ? {
-        ...offer,
-        unitPrice:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.unitPrice
-            : offer.unitPrice,
-        deliveryDays:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.deliveryDays ?? offer.deliveryDays
-            : offer.deliveryDays,
-        warrantyMonths:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.warrantyMonths ?? offer.warrantyMonths
-            : offer.warrantyMonths,
-        advancePaymentPercent:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.advancePaymentPercent ?? offer.advancePaymentPercent
-            : offer.advancePaymentPercent,
-      }
-    : {
-        id: 'pending',
-        requestId: '',
-        vendorId: action.vendorId,
-        roundNumber: 0,
-        rawResponse: '',
-        unitPrice:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.unitPrice
-            : Number.MAX_SAFE_INTEGER,
-        totalPrice: 0,
-        deliveryDays:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.deliveryDays ?? request.deliveryDays
-            : request.deliveryDays,
-        warrantyMonths:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.warrantyMonths ?? request.minimumWarrantyMonths
-            : request.minimumWarrantyMonths,
-        advancePaymentPercent:
-          action.type === 'SEND_COUNTER'
-            ? action.proposedTerms.advancePaymentPercent ?? request.maximumAdvancePaymentPercent
-            : request.maximumAdvancePaymentPercent,
-        paymentTerms: '',
-        validityDays: null,
-        additionalConditions: [],
-        extractionConfidence: 1,
-      };
+  const terms = action.type === 'SEND_COUNTER' ? action.proposedTerms : undefined;
+  const proposedOffer: Offer = {
+    ...(offer ?? {
+      id: 'pending',
+      requestId: '',
+      vendorId: action.vendorId,
+      roundNumber: 0,
+      rawResponse: '',
+      totalPrice: 0,
+      paymentTerms: '',
+      validityDays: null,
+      additionalConditions: [],
+      extractionConfidence: 1,
+    }),
+    unitPrice: terms?.unitPrice ?? offer?.unitPrice ?? Number.MAX_SAFE_INTEGER,
+    deliveryDays: terms?.deliveryDays ?? offer?.deliveryDays ?? request.deliveryDays,
+    warrantyMonths: terms?.warrantyMonths ?? offer?.warrantyMonths ?? request.minimumWarrantyMonths,
+    advancePaymentPercent: terms?.advancePaymentPercent ?? offer?.advancePaymentPercent ?? request.maximumAdvancePaymentPercent,
+  };
 
   return validateOffer(proposedOffer, request);
 }

@@ -326,7 +326,7 @@ async function getOfferWithRecovery(
         );
 
         try {
-          return parseOffer(
+          return await parseOffer(
             response.raw,
             session.requestId,
             vendor,
@@ -465,6 +465,8 @@ async function negotiateVendor(
         vendorId: vendor.id,
         round,
         currentBestOffer: session.currentBestOffer?.id ?? null,
+        currentBestUnitPrice: session.currentBestOffer?.unitPrice ?? null,
+        currentBestVendorId: session.currentBestOffer?.vendorId ?? null,
       }
     );
 

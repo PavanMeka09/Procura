@@ -69,20 +69,73 @@ const criticSchema = z.object({
 });
 
 /**
- * Builds standard serialized context for LLM prompts.
+ * Builds standard serialized context for LLM prompts including active competitive auction benchmarks.
  */
-function buildPromptContext(session: NegotiationSession, offer: Offer): string {
+export function buildPromptContext(session: NegotiationSession, offer: Offer): string {
   const defaultEvidence = [
     'Maximum advance payment is 20%',
     'Minimum warranty is 24 months',
     'Maximum delivery is 21 days',
   ];
 
+  const currentVendor = session.vendors.find((v) => v.id === offer.vendorId);
+  const bestOffer = session.currentBestOffer;
+  const isCompetitorBest = Boolean(
+    bestOffer &&
+      bestOffer.vendorId !== offer.vendorId &&
+      bestOffer.policyStatus === 'PASS'
+  );
+  const bestVendor = isCompetitorBest && bestOffer
+    ? session.vendors.find((v) => v.id === bestOffer.vendorId)
+    : null;
+
+  const competitiveBenchmark = isCompetitorBest && bestOffer
+    ? {
+        vendorName: bestVendor?.name ?? 'Competing Approved Vendor',
+        vendorSlug: bestVendor?.slug ?? null,
+        vendorId: bestOffer.vendorId,
+        unitPrice: bestOffer.unitPrice,
+        deliveryDays: bestOffer.deliveryDays,
+        warrantyMonths: bestOffer.warrantyMonths,
+        advancePaymentPercent: bestOffer.advancePaymentPercent,
+        policyStatus: bestOffer.policyStatus,
+        isFromCompetitor: true,
+        isBetterThanCurrent: bestOffer.unitPrice < offer.unitPrice,
+        priceAdvantageInINR: Math.max(0, offer.unitPrice - bestOffer.unitPrice),
+      }
+    : null;
+
+  const competitorOffersSummary = session.vendors
+    .filter((v) => v.id !== offer.vendorId)
+    .map((v) => {
+      const vendorOffers = session.offers.filter((o) => o.vendorId === v.id);
+      const latestOffer = vendorOffers[vendorOffers.length - 1];
+      const bestCompliant =
+        vendorOffers
+          .filter((o) => o.policyStatus === 'PASS')
+          .sort((a, b) => a.unitPrice - b.unitPrice)[0] ?? null;
+
+      if (!latestOffer) return null;
+
+      return {
+        vendorName: v.name,
+        latestUnitPrice: latestOffer.unitPrice,
+        bestCompliantUnitPrice: bestCompliant?.unitPrice ?? null,
+        warrantyMonths: latestOffer.warrantyMonths,
+        deliveryDays: latestOffer.deliveryDays,
+        advancePaymentPercent: latestOffer.advancePaymentPercent,
+        hasCompliantOffer: Boolean(bestCompliant),
+      };
+    })
+    .filter(Boolean);
+
   return JSON.stringify({
     request: session.originalRequest,
-    vendor: session.vendors.find((v) => v.id === offer.vendorId),
+    currentVendor,
     currentOffer: offer,
     currentBestOffer: session.currentBestOffer,
+    competitiveBenchmark,
+    competitorOffersSummary,
     history: session.messages.slice(-12),
     evidence: session.retrievedEvidence.length
       ? session.retrievedEvidence
@@ -146,7 +199,47 @@ export async function proposeAction(
   }
 
   const runs: NegotiationSession['modelRuns'] = [];
-  const prompt = `You are the primary procurement negotiator. Return only a concise structured action. Never authorize execution; the critic and deterministic policy gate do that. ${buildPromptContext(session, offer)}`;
+  const currentVendor = session.vendors.find((v) => v.id === offer.vendorId);
+  const bestOffer = session.currentBestOffer;
+  const hasCompetitorBenchmark = Boolean(
+    bestOffer &&
+      bestOffer.vendorId !== offer.vendorId &&
+      bestOffer.policyStatus === 'PASS'
+  );
+  const bestVendor = hasCompetitorBenchmark && bestOffer
+    ? session.vendors.find((v) => v.id === bestOffer.vendorId)
+    : null;
+
+  const competitorBenchmarkText =
+    hasCompetitorBenchmark && bestOffer
+      ? `Active Competitor Benchmark: ${bestVendor?.name ?? 'A competitor'} has already offered ₹${bestOffer.unitPrice.toLocaleString('en-IN')} with ${bestOffer.warrantyMonths}-month warranty and ${bestOffer.deliveryDays}-day delivery.`
+      : 'Active Competitor Benchmark: No lower competitor offer secured yet.';
+
+  const competitorLeverageInstruction =
+    hasCompetitorBenchmark && bestOffer
+      ? `When negotiating with ${currentVendor?.name ?? 'the current vendor'}, actively leverage the benchmark in your counteroffer message (e.g. "${bestVendor?.name ?? 'A competing vendor'} just offered ₹${bestOffer.unitPrice.toLocaleString('en-IN')} with ${bestOffer.warrantyMonths}-month warranty. Can you beat that with ₹...").`
+      : `Challenge ${currentVendor?.name ?? 'the current vendor'} to provide their best pricing and terms meeting or beating the target price.`;
+
+  const prompt = `You are the lead enterprise procurement negotiator conducting an active multi-vendor competitive auction.
+Your goal is to secure the lowest compliant unit price and best commercial terms for the buyer.
+
+TACTICAL COMPETITIVE AUCTION RULES:
+1. Dynamic Competitor Leverage:
+   - ${competitorBenchmarkText}
+   - ${competitorLeverageInstruction}
+   - Propose a unitPrice that matches or beats the current best offer (aiming towards the target price of ₹${session.targetUnitPrice ?? session.maximumUnitPrice}).
+2. Compliance & Hard Limits:
+   - Proposed unit price MUST NOT exceed max price cap ₹${session.maximumUnitPrice}.
+   - Advance payment MUST NOT exceed ${session.maximumAdvancePaymentPercent}%.
+   - Delivery MUST NOT exceed ${session.maximumDeliveryDays} days.
+   - Warranty MUST be at least ${session.minimumWarrantyMonths} months.
+3. Acceptance Strategy:
+   - Propose ACCEPT only when the offer is fully compliant, hits target expectations, and beats or matches all competitor benchmarks.
+   - Propose SEND_COUNTER with aggressive terms whenever further price improvement or compliance correction is achievable.
+
+Return only a concise structured JSON object matching the action schema. Never authorize execution directly.
+Context:
+${buildPromptContext(session, offer)}`;
 
   // 1. Try Primary Google Gemini Provider (up to 2 attempts)
   if (config.googleApiKey) {
@@ -307,6 +400,7 @@ function deterministicProposal(
   offer: Offer
 ): AgentAction {
   const vendor = session.vendors.find((item) => item.id === offer.vendorId);
+  const vendorName = vendor?.name ?? 'Vendor';
 
   // Vendor A round 1 special case for test scenario
   if (vendor?.slug === 'vendor-a' && offer.roundNumber === 1) {
@@ -325,33 +419,53 @@ function deterministicProposal(
     offer.warrantyMonths >= session.minimumWarrantyMonths &&
     offer.advancePaymentPercent <= session.maximumAdvancePaymentPercent;
 
-  if (
-    isCompliant &&
-    offer.unitPrice <= (session.targetUnitPrice ?? session.maximumUnitPrice)
-  ) {
+  const targetPrice = session.targetUnitPrice ?? session.maximumUnitPrice;
+  const bestOffer = session.currentBestOffer;
+  const isCompetitorBest = Boolean(
+    bestOffer &&
+      bestOffer.vendorId !== offer.vendorId &&
+      bestOffer.policyStatus === 'PASS'
+  );
+  const competitorVendor = isCompetitorBest
+    ? session.vendors.find((v) => v.id === bestOffer?.vendorId)
+    : null;
+  const competitorName = competitorVendor?.name ?? 'A competing vendor';
+  const beatsOrMatchesCompetitor =
+    !isCompetitorBest || !bestOffer || offer.unitPrice <= bestOffer.unitPrice;
+
+  if (isCompliant && offer.unitPrice <= targetPrice && beatsOrMatchesCompetitor) {
     return {
       type: 'ACCEPT',
       vendorId: offer.vendorId,
       offerId: offer.id,
-      rationale: `Offer meets every hard constraint at ₹${offer.unitPrice.toLocaleString('en-IN')} per unit.`,
+      rationale: `Offer meets every hard constraint at ₹${offer.unitPrice.toLocaleString('en-IN')} per unit and beats or matches competitor benchmarks.`,
     };
   }
 
-  if (offer.roundNumber >= 3 && isCompliant) {
+  if (offer.roundNumber >= 3 && isCompliant && beatsOrMatchesCompetitor) {
     return {
       type: 'ACCEPT',
       vendorId: offer.vendorId,
       offerId: offer.id,
-      rationale: `After ${offer.roundNumber} rounds, the offer is compliant and further improvement is uncertain.`,
+      rationale: `After ${offer.roundNumber} rounds, the offer is compliant at ₹${offer.unitPrice.toLocaleString('en-IN')} and competitive against market benchmarks.`,
     };
   }
 
   const baseTarget = session.targetUnitPrice ?? 55000;
   const priceReduction = vendor?.slug === 'vendor-c' ? 2500 : 3000;
-  const nextPrice = Math.max(
-    baseTarget,
-    Math.min(session.maximumUnitPrice, offer.unitPrice - priceReduction)
-  );
+
+  let nextPrice: number;
+  if (isCompetitorBest && bestOffer && bestOffer.unitPrice < offer.unitPrice) {
+    nextPrice = Math.max(
+      baseTarget,
+      Math.min(bestOffer.unitPrice - 500, offer.unitPrice - priceReduction)
+    );
+  } else {
+    nextPrice = Math.max(
+      baseTarget,
+      Math.min(session.maximumUnitPrice, offer.unitPrice - priceReduction)
+    );
+  }
 
   const proposedTerms: ProposedTerms = {
     unitPrice: nextPrice,
@@ -361,14 +475,25 @@ function deterministicProposal(
     paymentTerms: '20% advance, balance on delivery',
   };
 
+  let message: string;
+  let rationale: string;
+
+  if (isCompetitorBest && bestOffer && bestOffer.unitPrice < offer.unitPrice) {
+    message = `${competitorName} just offered ₹${bestOffer.unitPrice.toLocaleString('en-IN')} with ${bestOffer.warrantyMonths}-month warranty and ${bestOffer.deliveryDays}-day delivery. Can you beat that? We can proceed at ₹${nextPrice.toLocaleString('en-IN')} per unit with ${proposedTerms.deliveryDays}-day delivery, ${proposedTerms.warrantyMonths}-month warranty, and ${proposedTerms.advancePaymentPercent}% advance payment.`;
+    rationale = `Leveraging ${competitorName}'s ₹${bestOffer.unitPrice.toLocaleString('en-IN')} benchmark to drive competitive price concessions from ${vendorName}.`;
+  } else {
+    message = `We can proceed at ₹${nextPrice.toLocaleString('en-IN')} per unit with ${proposedTerms.deliveryDays}-day delivery, ${proposedTerms.warrantyMonths}-month warranty, and ${proposedTerms.advancePaymentPercent}% advance payment.`;
+    rationale = vendor
+      ? "Protect the hard constraints while preserving room for the vendor's next concession."
+      : 'Counter within policy limits.';
+  }
+
   return {
     type: 'SEND_COUNTER',
     vendorId: offer.vendorId,
-    message: `We can proceed at ₹${nextPrice.toLocaleString('en-IN')} per unit with ${proposedTerms.deliveryDays}-day delivery, ${proposedTerms.warrantyMonths}-month warranty, and ${proposedTerms.advancePaymentPercent}% advance payment.`,
+    message,
     proposedTerms,
-    rationale: vendor
-      ? "Protect the hard constraints while preserving room for the vendor's next concession."
-      : 'Counter within policy limits.',
+    rationale,
   };
 }
 
