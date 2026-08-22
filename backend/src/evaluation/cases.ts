@@ -10,6 +10,8 @@ export type EvaluationScenarioKind =
   | 'knowledge';
 
 export type PolicyViolationType = 'price' | 'warranty' | 'delivery' | 'advance';
+export type HumanReviewTrigger = 'missing_critic' | 'elevated_risk';
+export type StopTrigger = 'max_rounds' | 'deadlock';
 
 export interface EvaluationCase {
   id: string;
@@ -20,6 +22,8 @@ export interface EvaluationCase {
     kind: EvaluationScenarioKind;
     expected: string;
     violationType?: PolicyViolationType;
+    humanTrigger?: HumanReviewTrigger;
+    stopTrigger?: StopTrigger;
   };
   expectedBehavior: string;
 }
@@ -200,7 +204,7 @@ export const evaluationCases: EvaluationCase[] = [
     category: 'Cryptographic Hardware',
     input:
       'Purchase 100 enterprise cryptographic hardware security modules (HSM) target ₹2,50,000 max ₹2,70,000 each, delivery in 30 days, min 36-month warranty, max 10% advance.',
-    scenarioConfig: { kind: 'human', expected: 'human_review' },
+    scenarioConfig: { kind: 'human', expected: 'human_review', humanTrigger: 'missing_critic' },
     expectedBehavior:
       'Missing critic evaluation fails closed into HUMAN_REVIEW to prevent unverified financial commitments.',
   },
@@ -210,7 +214,7 @@ export const evaluationCases: EvaluationCase[] = [
     category: 'Smart Utilities',
     input:
       'Procure 500 smart electricity grid meters max ₹6,500 each with delivery in 21 days, min 24-month warranty, max 20% advance.',
-    scenarioConfig: { kind: 'human', expected: 'human_review' },
+    scenarioConfig: { kind: 'human', expected: 'human_review', humanTrigger: 'elevated_risk' },
     expectedBehavior:
       'Hold action for human approval when risk score exceeds safety thresholds or vendor clauses are flagged.',
   },
@@ -224,7 +228,7 @@ export const evaluationCases: EvaluationCase[] = [
     category: 'Industrial Logistics',
     input:
       'Procure 250 industrial barcode printers target ₹38,000 max ₹40,000 each, delivery in 21 days, min 24-month warranty, max 20% advance.',
-    scenarioConfig: { kind: 'stop', expected: 'stopped' },
+    scenarioConfig: { kind: 'stop', expected: 'stopped', stopTrigger: 'max_rounds' },
     expectedBehavior:
       'Terminate negotiation when maximum round limit is reached and log stop reason.',
   },
@@ -234,7 +238,7 @@ export const evaluationCases: EvaluationCase[] = [
     category: 'Precision Hardware',
     input:
       'Purchase 20 specialized laser calibration tools target ₹75,000 max ₹80,000 each, delivery in 14 days, 36 months warranty, max 20% advance.',
-    scenarioConfig: { kind: 'stop', expected: 'stopped' },
+    scenarioConfig: { kind: 'stop', expected: 'stopped', stopTrigger: 'deadlock' },
     expectedBehavior:
       'Cleanly stop negotiation session when vendor concessions flatten and no compliant outcome is possible.',
   },
@@ -254,18 +258,10 @@ export const evaluationCases: EvaluationCase[] = [
   },
 ];
 
-export const canonicalRequest: ProcurementRequest = {
-  item: 'business laptops',
-  quantity: 500,
-  targetUnitPrice: 55000,
-  maximumUnitPrice: 57000,
-  deliveryDays: 21,
-  minimumWarrantyMonths: 24,
-  maximumAdvancePaymentPercent: 20,
-  negotiableTerms: ['unit price', 'delivery schedule', 'payment terms'],
-  nonNegotiableTerms: [
-    'maximum unit price',
-    'minimum warranty',
-    'maximum advance payment',
-  ],
-};
+export const QUICK_SAMPLE_CASE_IDS = [
+  'normal-1',
+  'policy-1',
+  'malformed-1',
+  'failure-1',
+  'human-1',
+] as const;

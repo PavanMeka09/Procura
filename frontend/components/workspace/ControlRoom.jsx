@@ -32,6 +32,8 @@ export function ControlRoom({ initialSession, onNew }) {
     <div className="app-shell">
       {/* Left sidebar navigation */}
       <SidebarRail
+        activeView={activeView}
+        onSelectView={setActiveView}
         onNew={onNew}
         onEvaluation={() => setActiveView('evaluation')}
       />

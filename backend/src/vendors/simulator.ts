@@ -14,19 +14,31 @@ export const VENDOR_IDS = {
   vertex: '6c9e4d53-a22f-4a1f-b4d4-9c9d5b2e0c03',
 } as const;
 
+export interface SyntheticOfferOptions {
+  requestId: string;
+  vendorId: string;
+  roundNumber: number;
+  unitPrice: number;
+  deliveryDays: number;
+  warrantyMonths: number;
+  advancePaymentPercent: number;
+  paymentTerms: string;
+}
+
 /**
  * Creates a synthetic vendor offer structure for deterministic test suites.
  */
-function createSyntheticOffer(
-  requestId: string,
-  vendorId: string,
-  roundNumber: number,
-  unitPrice: number,
-  deliveryDays: number,
-  warrantyMonths: number,
-  advancePaymentPercent: number,
-  paymentTerms: string
-): Offer {
+function createSyntheticOffer(options: SyntheticOfferOptions): Offer {
+  const {
+    requestId,
+    vendorId,
+    roundNumber,
+    unitPrice,
+    deliveryDays,
+    warrantyMonths,
+    advancePaymentPercent,
+    paymentTerms,
+  } = options;
   const proposalType = roundNumber === 1 ? 'the initial quote' : 'this revised proposal';
   const rawResponse = `We can supply ${unitPrice.toLocaleString('en-IN')} INR per unit for ${proposalType}, delivery in ${deliveryDays} days, ${warrantyMonths}-month warranty, and ${advancePaymentPercent}% advance payment (${paymentTerms}). Offer valid for 15 days.`;
 
@@ -48,9 +60,92 @@ function createSyntheticOffer(
   };
 }
 
+interface VendorProfileConfig {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  reliabilityScore: number;
+  contact: string;
+  salesPersona: string;
+  directorPersona: string;
+  concessionStrategy: 'eager_closer' | 'tough_bargainer' | 'balanced';
+  floorPrice: number;
+  roundPrices: [number, number, number];
+  deliveryDays: number;
+  warrantyMonths: number;
+  advanceSchedule: [number, number, number];
+  paymentTerms: [string, string, string];
+  failure: 'DELAY_ONCE' | 'MALFORMED_ONCE' | 'TEMPORARY_FAILURE_ONCE';
+}
+
+function buildVendor(requestId: string, vendorConfig: VendorProfileConfig): Vendor {
+  const initial = createSyntheticOffer({
+    requestId,
+    vendorId: vendorConfig.id,
+    roundNumber: 1,
+    unitPrice: vendorConfig.roundPrices[0],
+    deliveryDays: vendorConfig.deliveryDays,
+    warrantyMonths: vendorConfig.warrantyMonths,
+    advancePaymentPercent: vendorConfig.advanceSchedule[0],
+    paymentTerms: vendorConfig.paymentTerms[0],
+  });
+
+  const rounds = [
+    createSyntheticOffer({
+      requestId,
+      vendorId: vendorConfig.id,
+      roundNumber: 2,
+      unitPrice: vendorConfig.roundPrices[1],
+      deliveryDays: vendorConfig.deliveryDays,
+      warrantyMonths: vendorConfig.warrantyMonths,
+      advancePaymentPercent: vendorConfig.advanceSchedule[1],
+      paymentTerms: vendorConfig.paymentTerms[1],
+    }),
+    createSyntheticOffer({
+      requestId,
+      vendorId: vendorConfig.id,
+      roundNumber: 3,
+      unitPrice: vendorConfig.roundPrices[2],
+      deliveryDays: vendorConfig.deliveryDays,
+      warrantyMonths: vendorConfig.warrantyMonths,
+      advancePaymentPercent: vendorConfig.advanceSchedule[2],
+      paymentTerms: vendorConfig.paymentTerms[2],
+    }),
+  ];
+
+  return {
+    id: vendorConfig.id,
+    slug: vendorConfig.slug,
+    name: vendorConfig.name,
+    category: vendorConfig.category,
+    approved: true,
+    reliabilityScore: vendorConfig.reliabilityScore,
+    contact: vendorConfig.contact,
+    vendorType: 'ai_agent',
+    channel: 'Autonomous AI Sales Agent',
+    salesPersona: vendorConfig.salesPersona,
+    privateConstraints: {
+      floorUnitPrice: vendorConfig.floorPrice,
+      targetUnitPrice: vendorConfig.roundPrices[0],
+      minAdvancePercent: vendorConfig.advanceSchedule[2],
+      minDeliveryDays: vendorConfig.deliveryDays,
+      maxWarrantyMonths: vendorConfig.warrantyMonths,
+      concessionStrategy: vendorConfig.concessionStrategy,
+      salesPersona: vendorConfig.directorPersona,
+    },
+    behavior: {
+      initial,
+      rounds,
+      failure: vendorConfig.failure,
+    },
+  };
+}
+
 /**
  * Returns autonomous vendor profiles equipped with private commercial constraints,
  * sales personas, and fallback multi-round concession curves.
+ * Dynamically scales constraints relative to the user's parsed procurement request.
  */
 export function seededVendors(
   requestId: string,
@@ -82,178 +177,76 @@ export function seededVendors(
   const vertexFloorPrice = request ? targetPrice : 55000;
 
   return [
-    {
+    buildVendor(requestId, {
       id: VENDOR_IDS.apex,
       slug: 'vendor-a',
       name: 'Apex Devices',
       category,
-      approved: true,
       reliabilityScore: 0.84,
       contact: 'sales@apex.example',
-      vendorType: 'ai_agent',
-      channel: 'Autonomous AI Sales Agent',
       salesPersona:
         'Fast-paced commercial hardware supplier. Prioritizes deal volume and quick closure over maximum margin; willing to make larger price concessions if advance payment terms are met.',
-      privateConstraints: {
-        floorUnitPrice: apexFloorPrice,
-        targetUnitPrice: apexRound1Price,
-        minAdvancePercent: maxAdvance,
-        minDeliveryDays: apexDeliveryDays,
-        maxWarrantyMonths: warranty,
-        concessionStrategy: 'eager_closer',
-        salesPersona: `Apex Devices sales director. Open to cutting price down to ₹${apexFloorPrice.toLocaleString('en-IN')} for rapid closing.`,
-      },
-      behavior: {
-        initial: createSyntheticOffer(
-          requestId,
-          VENDOR_IDS.apex,
-          1,
-          apexRound1Price,
-          apexDeliveryDays,
-          warranty,
-          50,
-          '50% advance, balance before dispatch'
-        ),
-        rounds: [
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.apex,
-            2,
-            apexRound2Price,
-            apexDeliveryDays,
-            warranty,
-            30,
-            '30% advance, balance on dispatch'
-          ),
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.apex,
-            3,
-            apexRound3Price,
-            apexDeliveryDays,
-            warranty,
-            maxAdvance,
-            `${maxAdvance}% advance, balance on delivery`
-          ),
-        ],
-        failure: 'DELAY_ONCE',
-      },
-    },
-    {
+      directorPersona: `Apex Devices sales director. Open to cutting price down to ₹${apexFloorPrice.toLocaleString('en-IN')} for rapid closing.`,
+      concessionStrategy: 'eager_closer',
+      floorPrice: apexFloorPrice,
+      roundPrices: [apexRound1Price, apexRound2Price, apexRound3Price],
+      deliveryDays: apexDeliveryDays,
+      warrantyMonths: warranty,
+      advanceSchedule: [50, 30, maxAdvance],
+      paymentTerms: [
+        '50% advance, balance before dispatch',
+        '30% advance, balance on dispatch',
+        `${maxAdvance}% advance, balance on delivery`,
+      ],
+      failure: 'DELAY_ONCE',
+    }),
+    buildVendor(requestId, {
       id: VENDOR_IDS.northstar,
       slug: 'vendor-b',
       name: 'Northstar IT',
       category,
-      approved: true,
       reliabilityScore: 0.91,
       contact: 'rfq@northstar.example',
-      vendorType: 'ai_agent',
-      channel: 'Autonomous AI Sales Agent',
       salesPersona:
         'Enterprise IT hardware distributor. Backed by extensive 36-month warranties and rapid 14-day delivery; enforces strict minimum margin floors.',
-      privateConstraints: {
-        floorUnitPrice: northstarFloorPrice,
-        targetUnitPrice: northstarRound1Price,
-        minAdvancePercent: maxAdvance,
-        minDeliveryDays: northstarDeliveryDays,
-        maxWarrantyMonths: northstarWarrantyMonths,
-        concessionStrategy: 'tough_bargainer',
-        salesPersona: `Northstar IT enterprise sales VP. Emphasizes superior ${northstarWarrantyMonths}-month warranty and rapid fulfillment; holds a firm floor of ₹${northstarFloorPrice.toLocaleString('en-IN')}.`,
-      },
-      behavior: {
-        initial: createSyntheticOffer(
-          requestId,
-          VENDOR_IDS.northstar,
-          1,
-          northstarRound1Price,
-          northstarDeliveryDays,
-          northstarWarrantyMonths,
-          maxAdvance,
-          `${maxAdvance}% advance, balance on delivery`
-        ),
-        rounds: [
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.northstar,
-            2,
-            northstarRound2Price,
-            northstarDeliveryDays,
-            northstarWarrantyMonths,
-            maxAdvance,
-            `${maxAdvance}% advance, balance on delivery`
-          ),
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.northstar,
-            3,
-            northstarRound3Price,
-            northstarDeliveryDays,
-            northstarWarrantyMonths,
-            maxAdvance,
-            `${maxAdvance}% advance, balance on delivery`
-          ),
-        ],
-        failure: 'MALFORMED_ONCE',
-      },
-    },
-    {
+      directorPersona: `Northstar IT enterprise sales VP. Emphasizes superior ${northstarWarrantyMonths}-month warranty and rapid fulfillment; holds a firm floor of ₹${northstarFloorPrice.toLocaleString('en-IN')}.`,
+      concessionStrategy: 'tough_bargainer',
+      floorPrice: northstarFloorPrice,
+      roundPrices: [northstarRound1Price, northstarRound2Price, northstarRound3Price],
+      deliveryDays: northstarDeliveryDays,
+      warrantyMonths: northstarWarrantyMonths,
+      advanceSchedule: [maxAdvance, maxAdvance, maxAdvance],
+      paymentTerms: [
+        `${maxAdvance}% advance, balance on delivery`,
+        `${maxAdvance}% advance, balance on delivery`,
+        `${maxAdvance}% advance, balance on delivery`,
+      ],
+      failure: 'MALFORMED_ONCE',
+    }),
+    buildVendor(requestId, {
       id: VENDOR_IDS.vertex,
       slug: 'vendor-c',
       name: 'Vertex Systems',
       category,
-      approved: true,
       reliabilityScore: 0.96,
       contact: 'commercial@vertex.example',
-      vendorType: 'ai_agent',
-      channel: 'Autonomous AI Sales Agent',
       salesPersona:
         'Established IT systems integrator. Offers balanced commercial terms with predictable step-by-step price concessions down to target price.',
-      privateConstraints: {
-        floorUnitPrice: vertexFloorPrice,
-        targetUnitPrice: vertexRound1Price,
-        minAdvancePercent: maxAdvance,
-        minDeliveryDays: delivery,
-        maxWarrantyMonths: warranty,
-        concessionStrategy: 'balanced',
-        salesPersona:
-          'Vertex Systems commercial account manager. Bids competitively with high reliability and balanced concession curves.',
-      },
-      behavior: {
-        initial: createSyntheticOffer(
-          requestId,
-          VENDOR_IDS.vertex,
-          1,
-          vertexRound1Price,
-          delivery,
-          warranty,
-          maxAdvance,
-          `${maxAdvance}% advance, balance on delivery`
-        ),
-        rounds: [
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.vertex,
-            2,
-            vertexRound2Price,
-            delivery,
-            warranty,
-            maxAdvance,
-            `${maxAdvance}% advance, balance on delivery`
-          ),
-          createSyntheticOffer(
-            requestId,
-            VENDOR_IDS.vertex,
-            3,
-            vertexRound3Price,
-            delivery,
-            warranty,
-            maxAdvance,
-            `${maxAdvance}% advance, balance on delivery`
-          ),
-        ],
-        failure: 'TEMPORARY_FAILURE_ONCE',
-      },
-    },
+      directorPersona:
+        'Vertex Systems commercial account manager. Bids competitively with high reliability and balanced concession curves.',
+      concessionStrategy: 'balanced',
+      floorPrice: vertexFloorPrice,
+      roundPrices: [vertexRound1Price, vertexRound2Price, vertexRound3Price],
+      deliveryDays: delivery,
+      warrantyMonths: warranty,
+      advanceSchedule: [maxAdvance, maxAdvance, maxAdvance],
+      paymentTerms: [
+        `${maxAdvance}% advance, balance on delivery`,
+        `${maxAdvance}% advance, balance on delivery`,
+        `${maxAdvance}% advance, balance on delivery`,
+      ],
+      failure: 'TEMPORARY_FAILURE_ONCE',
+    }),
   ];
 }
 

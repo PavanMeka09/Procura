@@ -274,7 +274,7 @@ export function extractRequirementsRegexFallback(rawRequest: string): Procuremen
   return {
     item,
     quantity,
-    targetUnitPrice: explicitTarget ?? (colloquialPrice ? parsedTargetPrice : null),
+    targetUnitPrice: parsedTargetPrice,
     maximumUnitPrice: parsedMaxPrice,
     deliveryDays,
     minimumWarrantyMonths: warranty,

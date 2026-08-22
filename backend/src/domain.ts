@@ -248,7 +248,7 @@ export interface EvaluationRun {
   failed: number;
   metrics: Record<string, number>;
   results: EvaluationResult[];
-  executionMode?: 'provider' | 'test-adapter';
+  executionMode?: 'provider' | 'provider-quick' | 'test-adapter';
   createdAt: string;
 }
 

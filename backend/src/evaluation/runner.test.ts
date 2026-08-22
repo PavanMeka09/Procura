@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { evaluationCases } from './cases';
+import { QUICK_SAMPLE_CASE_IDS, evaluationCases } from './cases';
 import { runEvaluation } from './runner';
 
 describe('20-Case Evaluation Suite & Harness', () => {
@@ -51,4 +51,21 @@ describe('20-Case Evaluation Suite & Harness', () => {
     },
     30000
   );
+
+  test('quick sample benchmark case IDs are valid and cover core categories', () => {
+    expect(QUICK_SAMPLE_CASE_IDS).toHaveLength(5);
+    const caseMap = new Map(evaluationCases.map((c) => [c.id, c]));
+
+    const sampledCategories = new Set<string>();
+    for (const sampleId of QUICK_SAMPLE_CASE_IDS) {
+      const foundCase = caseMap.get(sampleId);
+      expect(foundCase).toBeDefined();
+      if (foundCase) {
+        sampledCategories.add(foundCase.scenarioConfig.kind);
+      }
+    }
+
+    // Ensures quick sample spans 5 distinct core scenario kinds
+    expect(sampledCategories.size).toBe(5);
+  });
 });

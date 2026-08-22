@@ -70,7 +70,7 @@ const DECISION_STATUS_MAP: Record<z.infer<typeof decisionSchema>, 'APPROVED' | '
   stop: 'STOPPED',
 };
 const evaluationBodySchema = z.object({
-  mode: z.enum(['provider', 'test-adapter']).default('test-adapter'),
+  mode: z.enum(['provider', 'provider-quick', 'test-adapter']).default('test-adapter'),
 });
 
 /**
@@ -127,6 +127,17 @@ function formatErrorResponse(error: unknown): {
   };
 }
 
+server.setErrorHandler((error, _request, reply) => {
+  if (error instanceof ApplicationError || error instanceof z.ZodError) {
+    const { status, body } = formatErrorResponse(error);
+    return reply.code(status).send(body);
+  }
+
+  server.log.error({ err: error }, 'Unhandled request failure');
+  const { status, body } = formatErrorResponse(error);
+  return reply.code(status).send(body);
+});
+
 // ---------------------------------------------------------------------------
 // Health & Info Routes
 // ---------------------------------------------------------------------------
@@ -152,25 +163,20 @@ server.get('/api/health', async () => ({
  * Ingests natural language requirement and creates a structured procurement record.
  */
 server.post('/api/procurements', async (request, reply) => {
-  try {
-    const { rawRequest } = parseProcurementBody(request.body);
-    const parsedRequirements = await extractRequirements(rawRequest);
-    const record: StoredRequestRecord = {
-      id: createId(),
-      rawRequest,
-      ...parsedRequirements,
-      status: 'INTAKE',
-      createdAt: now(),
-    };
+  const { rawRequest } = parseProcurementBody(request.body);
+  const parsedRequirements = await extractRequirements(rawRequest);
+  const record: StoredRequestRecord = {
+    id: createId(),
+    rawRequest,
+    ...parsedRequirements,
+    status: 'INTAKE',
+    createdAt: now(),
+  };
 
-    store.requests.set(record.id, record);
-    await persistRequest(record);
+  store.requests.set(record.id, record);
+  await persistRequest(record);
 
-    return reply.code(201).send({ request: record });
-  } catch (error) {
-    const { status, body } = formatErrorResponse(error);
-    return reply.code(status).send(body);
-  }
+  return reply.code(201).send({ request: record });
 });
 
 /**
@@ -180,51 +186,46 @@ server.post('/api/procurements', async (request, reply) => {
 server.post<{ Params: { id: string } }>(
   '/api/procurements/:id/start',
   async (request, reply) => {
-    try {
-      const id = idSchema.parse(request.params.id);
-      const record = await getRequest(id);
+    const id = idSchema.parse(request.params.id);
+    const record = await getRequest(id);
 
-      if (!record) {
-        return reply.code(404).send({
-          error: 'Procurement not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      // Return immediately if session is already in-flight from another concurrent request
-      const pendingStart = getPendingSessionStart(id);
-      if (pendingStart) {
-        const result = await pendingStart;
-        return reply.code(200).send({
-          requestId: record.id,
-          sessionId: result.session.id,
-          session: toPublicSession(result.session),
-        });
-      }
-
-      const result = await runWithSessionStartLock(id, async () => {
-        const existing = await getSession(id);
-        if (existing) {
-          return { session: existing, created: false };
-        }
-
-        const session = cacheSession(createSession(record.id, record));
-        record.status = 'RUNNING';
-        await persistRequest(record);
-
-        void runSession(session.id);
-        return { session, created: true };
+    if (!record) {
+      return reply.code(404).send({
+        error: 'Procurement not found.',
+        code: 'NOT_FOUND',
       });
+    }
 
-      return reply.code(result.created ? 202 : 200).send({
+    // Return immediately if session is already in-flight from another concurrent request
+    const pendingStart = getPendingSessionStart(id);
+    if (pendingStart) {
+      const result = await pendingStart;
+      return reply.code(200).send({
         requestId: record.id,
         sessionId: result.session.id,
         session: toPublicSession(result.session),
       });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
     }
+
+    const result = await runWithSessionStartLock(id, async () => {
+      const existing = await getSession(id);
+      if (existing) {
+        return { session: existing, created: false };
+      }
+
+      const session = cacheSession(createSession(record.id, record));
+      record.status = 'RUNNING';
+      await persistRequest(record);
+
+      void runSession(session.id);
+      return { session, created: true };
+    });
+
+    return reply.code(result.created ? 202 : 200).send({
+      requestId: record.id,
+      sessionId: result.session.id,
+      session: toPublicSession(result.session),
+    });
   }
 );
 
@@ -235,24 +236,19 @@ server.post<{ Params: { id: string } }>(
 server.get<{ Params: { id: string } }>(
   '/api/procurements/:id',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      const originalRequest = await getRequest(session.requestId);
-      return reply.code(200).send({
-        request: originalRequest,
-        session: toPublicSession(session),
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
       });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
     }
+
+    const originalRequest = await getRequest(session.requestId);
+    return reply.code(200).send({
+      request: originalRequest,
+      session: toPublicSession(session),
+    });
   }
 );
 
@@ -263,23 +259,18 @@ server.get<{ Params: { id: string } }>(
 server.get<{ Params: { id: string } }>(
   '/api/procurements/:id/offers',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      return reply.code(200).send({
-        offers: session.offers,
-        bestOffer: session.currentBestOffer,
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
       });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
     }
+
+    return reply.code(200).send({
+      offers: session.offers,
+      bestOffer: session.currentBestOffer,
+    });
   }
 );
 
@@ -290,20 +281,15 @@ server.get<{ Params: { id: string } }>(
 server.get<{ Params: { id: string } }>(
   '/api/procurements/:id/messages',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      return reply.code(200).send({ messages: session.messages });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
+      });
     }
+
+    return reply.code(200).send({ messages: session.messages });
   }
 );
 
@@ -314,20 +300,15 @@ server.get<{ Params: { id: string } }>(
 server.get<{ Params: { id: string } }>(
   '/api/procurements/:id/events',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      return reply.code(200).send({ events: session.events });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
+      });
     }
+
+    return reply.code(200).send({ events: session.events });
   }
 );
 
@@ -338,48 +319,43 @@ server.get<{ Params: { id: string } }>(
 server.get<{ Params: { id: string } }>(
   '/api/procurements/:id/events/stream',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      reply.hijack();
-      const raw = reply.raw;
-
-      raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': config.clientOrigin,
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
       });
-
-      // Stream existing historical events
-      for (const event of session.events) {
-        raw.write(`data: ${JSON.stringify(event)}\n\n`);
-      }
-
-      // Stream incoming live events
-      const unsubscribe = subscribe(session.id, (event) => {
-        raw.write(`data: ${JSON.stringify(event)}\n\n`);
-      });
-
-      // Periodic heartbeat to prevent client socket timeout
-      const heartbeat = setInterval(() => {
-        raw.write(': heartbeat\n\n');
-      }, 15000);
-
-      request.raw.on('close', () => {
-        clearInterval(heartbeat);
-        unsubscribe();
-      });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
     }
+
+    reply.hijack();
+    const raw = reply.raw;
+
+    raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': config.clientOrigin,
+    });
+
+    // Stream existing historical events
+    for (const event of session.events) {
+      raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+
+    // Stream incoming live events
+    const unsubscribe = subscribe(session.id, (event) => {
+      raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    });
+
+    // Periodic heartbeat to prevent client socket timeout
+    const heartbeat = setInterval(() => {
+      raw.write(': heartbeat\n\n');
+    }, 15000);
+
+    request.raw.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
   }
 );
 
@@ -390,89 +366,84 @@ server.get<{ Params: { id: string } }>(
 server.post<{ Params: { id: string; decision: string } }>(
   '/api/procurements/:id/:decision',
   async (request, reply) => {
-    try {
-      const session = await getSession(request.params.id);
-      if (!session) {
-        return reply.code(404).send({
-          error: 'Procurement session not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      const decision = decisionSchema.parse(request.params.decision);
-
-      // Terminal sessions cannot be stopped
-      if (
-        decision === 'stop' &&
-        ['ACCEPTED', 'STOPPED', 'FAILED'].includes(session.currentState)
-      ) {
-        return reply.code(409).send({
-          error: 'Terminal procurement sessions cannot be stopped.',
-          code: 'SESSION_TERMINAL',
-        });
-      }
-
-      const review = session.humanReview;
-      if (decision !== 'stop' && !review) {
-        return reply.code(409).send({
-          error: 'No pending human review.',
-          code: 'NO_PENDING_REVIEW',
-        });
-      }
-
-      // Handle duplicate decision idempotency
-      if (review && review.status !== 'PENDING') {
-        const resolved = DECISION_STATUS_MAP[decision];
-
-        if (review.status !== resolved) {
-          return reply.code(409).send({
-            error: 'Approval decision is already resolved.',
-            code: 'DUPLICATE_DECISION',
-          });
-        }
-
-        return reply.code(200).send({
-          session: toPublicSession(session),
-          idempotent: true,
-        });
-      }
-
-      if (review) {
-        review.status = DECISION_STATUS_MAP[decision];
-        review.resolvedAt = now();
-        store.reviews.set(review.id, review);
-        persistStoredApproval(session.id, review);
-      }
-
-      if (decision === 'approve') {
-        await resumeSession(session.id);
-        if (session.humanReview) {
-          persistStoredApproval(session.id, session.humanReview);
-        }
-      } else {
-        session.currentState = 'STOPPED';
-        session.pendingAction = null;
-        session.stopReason =
-          decision === 'reject'
-            ? 'Human rejected the proposed action.'
-            : 'Human stopped negotiation.';
-
-        appendEvent({
-          id: createId(),
-          sessionId: session.id,
-          type: decision === 'reject' ? 'HUMAN_REJECTED' : 'NEGOTIATION_STOPPED',
-          state: 'STOPPED',
-          message: session.stopReason,
-          metadata: { reviewId: review?.id },
-          createdAt: now(),
-        });
-      }
-
-      return reply.code(200).send({ session: toPublicSession(session) });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
+    const session = await getSession(request.params.id);
+    if (!session) {
+      return reply.code(404).send({
+        error: 'Procurement session not found.',
+        code: 'NOT_FOUND',
+      });
     }
+
+    const decision = decisionSchema.parse(request.params.decision);
+
+    // Terminal sessions cannot be stopped
+    if (
+      decision === 'stop' &&
+      ['ACCEPTED', 'STOPPED', 'FAILED'].includes(session.currentState)
+    ) {
+      return reply.code(409).send({
+        error: 'Terminal procurement sessions cannot be stopped.',
+        code: 'SESSION_TERMINAL',
+      });
+    }
+
+    const review = session.humanReview;
+    if (decision !== 'stop' && !review) {
+      return reply.code(409).send({
+        error: 'No pending human review.',
+        code: 'NO_PENDING_REVIEW',
+      });
+    }
+
+    // Handle duplicate decision idempotency
+    if (review && review.status !== 'PENDING') {
+      const resolved = DECISION_STATUS_MAP[decision];
+
+      if (review.status !== resolved) {
+        return reply.code(409).send({
+          error: 'Approval decision is already resolved.',
+          code: 'DUPLICATE_DECISION',
+        });
+      }
+
+      return reply.code(200).send({
+        session: toPublicSession(session),
+        idempotent: true,
+      });
+    }
+
+    if (review) {
+      review.status = DECISION_STATUS_MAP[decision];
+      review.resolvedAt = now();
+      store.reviews.set(review.id, review);
+      persistStoredApproval(session.id, review);
+    }
+
+    if (decision === 'approve') {
+      await resumeSession(session.id);
+      if (session.humanReview) {
+        persistStoredApproval(session.id, session.humanReview);
+      }
+    } else {
+      session.currentState = 'STOPPED';
+      session.pendingAction = null;
+      session.stopReason =
+        decision === 'reject'
+          ? 'Human rejected the proposed action.'
+          : 'Human stopped negotiation.';
+
+      appendEvent({
+        id: createId(),
+        sessionId: session.id,
+        type: decision === 'reject' ? 'HUMAN_REJECTED' : 'NEGOTIATION_STOPPED',
+        state: 'STOPPED',
+        message: session.stopReason,
+        metadata: { reviewId: review?.id },
+        createdAt: now(),
+      });
+    }
+
+    return reply.code(200).send({ session: toPublicSession(session) });
   }
 );
 
@@ -485,14 +456,9 @@ server.post<{ Params: { id: string; decision: string } }>(
  * Executes the 20-case evaluation suite.
  */
 server.post('/api/evaluation/run', async (request, reply) => {
-  try {
-    const body = evaluationBodySchema.parse(request.body ?? {});
-    const runResult = await runEvaluation(body.mode);
-    return reply.code(200).send({ run: runResult });
-  } catch (error) {
-    const { status, body } = formatErrorResponse(error);
-    return reply.code(status).send(body);
-  }
+  const body = evaluationBodySchema.parse(request.body ?? {});
+  const runResult = await runEvaluation(body.mode);
+  return reply.code(200).send({ run: runResult });
 });
 
 /**
@@ -502,35 +468,21 @@ server.post('/api/evaluation/run', async (request, reply) => {
 server.get<{ Params: { id: string } }>(
   '/api/evaluation/:id',
   async (request, reply) => {
-    try {
-      idSchema.parse(request.params.id);
-      const run =
-        store.evaluationRuns.get(request.params.id) ??
-        (await findEvaluation(request.params.id));
+    idSchema.parse(request.params.id);
+    const run =
+      store.evaluationRuns.get(request.params.id) ??
+      (await findEvaluation(request.params.id));
 
-      if (!run) {
-        return reply.code(404).send({
-          error: 'Evaluation run not found.',
-          code: 'NOT_FOUND',
-        });
-      }
-
-      return reply.code(200).send({ run });
-    } catch (error) {
-      const { status, body } = formatErrorResponse(error);
-      return reply.code(status).send(body);
+    if (!run) {
+      return reply.code(404).send({
+        error: 'Evaluation run not found.',
+        code: 'NOT_FOUND',
+      });
     }
+
+    return reply.code(200).send({ run });
   }
 );
-
-// Global unhandled error handler
-server.setErrorHandler((error, _request, reply) => {
-  server.log.error({ err: error }, 'Unhandled request failure');
-  return reply.code(500).send({
-    error: 'Internal server error.',
-    code: 'INTERNAL_ERROR',
-  });
-});
 
 assertProductionConfig();
 await server.listen({ port: config.port, host: '0.0.0.0' });

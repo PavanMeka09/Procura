@@ -65,8 +65,9 @@ export function EvaluationLab() {
               disabled={isExecuting}
               onChange={(event) => setExecutionMode(event.target.value)}
             >
-              <option value="test-adapter">Offline test adapter</option>
-              <option value="provider">Real providers</option>
+              <option value="test-adapter">Offline test adapter (20 cases · ~1s)</option>
+              <option value="provider-quick">Live quick sample (5 core cases · ~6-8s)</option>
+              <option value="provider">Full live provider suite (20 cases · parallel)</option>
             </select>
           </label>
 
@@ -102,8 +103,10 @@ export function EvaluationLab() {
               label="Execution"
               value={
                 run.executionMode === 'test-adapter'
-                  ? 'Test adapters'
-                  : 'Real providers'
+                  ? 'Offline test adapter'
+                  : run.executionMode === 'provider-quick'
+                  ? 'Live quick sample'
+                  : 'Live providers'
               }
             />
           </section>
@@ -155,21 +158,12 @@ export function EvaluationLab() {
                   {run.results.map((result) => (
                     <tr key={result.caseId}>
                       <td style={{ minWidth: '180px' }}>
-                        <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <strong>{result.caseId}</strong>
                           {result.category && (
-                            <span
-                              style={{
-                                marginLeft: '8px',
-                                fontSize: '0.72rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: 'rgba(255, 255, 255, 0.08)',
-                                color: 'var(--muted, #888)',
-                              }}
-                            >
+                            <StatusBadge tone="neutral">
                               {result.category}
-                            </span>
+                            </StatusBadge>
                           )}
                         </div>
                         {result.name && (

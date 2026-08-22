@@ -11,18 +11,26 @@ import {
 } from 'lucide-react';
 
 const NAV_LINKS = [
-  { label: 'Control room', icon: LayoutDashboard },
-  { label: 'Procurements', icon: FileText },
-  { label: 'Vendors', icon: Users },
-  { label: 'Policies', icon: ShieldCheck },
-  { label: 'Negotiations', icon: Activity },
-  { label: 'Approvals', icon: BadgeCheck },
+  { id: 'control', label: 'Control room', icon: LayoutDashboard },
+  { id: 'procurements', label: 'Procurements', icon: FileText },
+  { id: 'vendors', label: 'Vendors', icon: Users },
+  { id: 'policies', label: 'Policies', icon: ShieldCheck },
+  { id: 'negotiations', label: 'Negotiations', icon: Activity },
+  { id: 'approvals', label: 'Approvals', icon: BadgeCheck },
 ];
 
 /**
- * Left-hand application navigation rail with brand header, action trigger, and profile footer.
+ * Left-hand application navigation rail with brand header, action trigger, and view switcher.
  */
-export function SidebarRail({ onNew, onEvaluation }) {
+export function SidebarRail({ activeView = 'control', onSelectView, onNew, onEvaluation }) {
+  const handleSelect = (viewId) => {
+    if (onSelectView) {
+      onSelectView(viewId);
+    } else if (viewId === 'evaluation' && onEvaluation) {
+      onEvaluation();
+    }
+  };
+
   return (
     <aside className="rail">
       {/* Brand mark and title */}
@@ -41,25 +49,29 @@ export function SidebarRail({ onNew, onEvaluation }) {
 
       {/* Navigation links */}
       <nav>
-        {NAV_LINKS.map(({ label, icon: Icon }, index) => (
-          <div
-            key={label}
-            className={`nav-link ${index === 0 ? 'active' : ''}`}
-          >
-            <Icon size={17} />
-            {label}
-          </div>
-        ))}
+        {NAV_LINKS.map(({ id, label, icon: Icon }) => {
+          const isActive = activeView === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`nav-link nav-button ${isActive ? 'active' : ''}`}
+              onClick={() => handleSelect(id)}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
+          );
+        })}
         <button
           type="button"
-          className="nav-link nav-button"
-          onClick={onEvaluation}
+          className={`nav-link nav-button ${activeView === 'evaluation' ? 'active' : ''}`}
+          onClick={() => handleSelect('evaluation')}
         >
           <Activity size={17} />
           Evaluation
         </button>
       </nav>
-
     </aside>
   );
 }
