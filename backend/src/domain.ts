@@ -232,6 +232,9 @@ export interface HumanReview {
 
 export interface EvaluationResult {
   caseId: string;
+  name?: string;
+  category?: string;
+  input?: string;
   passed: boolean;
   expectedBehavior: string;
   actualBehavior: string;
