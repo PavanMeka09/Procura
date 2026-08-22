@@ -3,31 +3,21 @@
 import React from 'react';
 import {
   Activity,
-  BadgeCheck,
-  FileText,
   LayoutDashboard,
-  ShieldCheck,
-  Users,
 } from 'lucide-react';
 
 const NAV_LINKS = [
   { id: 'control', label: 'Control room', icon: LayoutDashboard },
-  { id: 'procurements', label: 'Procurements', icon: FileText },
-  { id: 'vendors', label: 'Vendors', icon: Users },
-  { id: 'policies', label: 'Policies', icon: ShieldCheck },
-  { id: 'negotiations', label: 'Negotiations', icon: Activity },
-  { id: 'approvals', label: 'Approvals', icon: BadgeCheck },
+  { id: 'evaluation', label: 'Evaluation', icon: Activity },
 ];
 
 /**
  * Left-hand application navigation rail with brand header, action trigger, and view switcher.
  */
-export function SidebarRail({ activeView = 'control', onSelectView, onNew, onEvaluation }) {
+export function SidebarRail({ activeView = 'control', onSelectView, onNew }) {
   const handleSelect = (viewId) => {
     if (onSelectView) {
       onSelectView(viewId);
-    } else if (viewId === 'evaluation' && onEvaluation) {
-      onEvaluation();
     }
   };
 
@@ -63,14 +53,6 @@ export function SidebarRail({ activeView = 'control', onSelectView, onNew, onEva
             </button>
           );
         })}
-        <button
-          type="button"
-          className={`nav-link nav-button ${activeView === 'evaluation' ? 'active' : ''}`}
-          onClick={() => handleSelect('evaluation')}
-        >
-          <Activity size={17} />
-          Evaluation
-        </button>
       </nav>
     </aside>
   );

@@ -36,7 +36,6 @@ export function ControlRoom({ initialSession, onNew }) {
         activeView={activeView}
         onSelectView={setActiveView}
         onNew={onNew}
-        onEvaluation={() => setActiveView('evaluation')}
       />
 
       {/* Main workspace arena */}
