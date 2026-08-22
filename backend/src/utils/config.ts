@@ -21,7 +21,6 @@ export const config = {
   maxRounds: Number(process.env.MAX_ROUNDS_PER_VENDOR ?? process.env.MAX_NEGOTIATION_ROUNDS ?? 3),
   embeddingModel: process.env.EMBEDDING_MODEL ?? 'text-embedding-004',
   vendorMode: (process.env.VENDOR_MODE ?? 'dynamic') as 'dynamic' | 'seeded' | 'hybrid' | 'external',
-  vendorAgentModel: process.env.VENDOR_AGENT_MODEL ?? process.env.PRIMARY_MODEL ?? 'gemini-3.7-flash',
   modelPricing: parsePricing(),
 };
 

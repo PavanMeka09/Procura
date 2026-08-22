@@ -29,7 +29,13 @@ export function IntakeForm({ onStart }) {
 
     try {
       const created = await createProcurement(requirementText);
+      if (!created?.request?.id) {
+        throw new Error(created?.error || 'Failed to create procurement request. Please check backend connection.');
+      }
       const started = await startProcurement(created.request.id);
+      if (!started?.session) {
+        throw new Error(started?.error || 'Failed to start procurement session.');
+      }
       onStart(created.request, started.session);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to start procurement.');

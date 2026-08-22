@@ -4,17 +4,28 @@ async function proxy(request, context) {
   const { path } = await context.params;
   const target = new URL(`${backendUrl.replace(/\/$/, '')}/api/${path.join('/')}`);
   target.search = new URL(request.url).search;
+
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('content-length');
   headers.set('authorization', `Bearer ${process.env.PROCURA_API_KEY || ''}`);
-  const response = await fetch(target, {
+
+  const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.text();
+
+  const response = await fetch(target.toString(), {
     method: request.method,
     headers,
-    body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-    duplex: 'half',
+    body,
   });
-  return new Response(response.body, { status: response.status, headers: response.headers });
+
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete('content-encoding');
+  responseHeaders.delete('content-length');
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: responseHeaders,
+  });
 }
 
 export const GET = proxy;

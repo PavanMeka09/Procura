@@ -181,7 +181,7 @@ Generate a realistic commercial counter-response. You must return structured num
     try {
       const google = createGoogleGenerativeAI({ apiKey: config.googleApiKey });
       const result = await generateObject({
-        model: google(config.vendorAgentModel ?? config.primaryModel),
+        model: google(config.primaryModel),
         schema: vendorResponseSchema,
         prompt: systemPrompt,
         temperature: 0.3,
