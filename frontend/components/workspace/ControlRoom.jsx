@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import { AlertCircle, ShieldAlert } from 'lucide-react';
 import { SidebarRail } from '../navigation/SidebarRail';
 import { RequestHeader } from './RequestHeader';
 import { BestOfferCard } from './BestOfferCard';
@@ -10,6 +10,7 @@ import { NegotiationTimeline } from './NegotiationTimeline';
 import { VerificationRail } from './VerificationRail';
 import { EvaluationLab } from '../evaluation/EvaluationLab';
 import { useProcurementSession } from '../../hooks/useProcurementSession';
+import { getSessionStatusInfo } from '../../lib/status-helpers';
 
 /**
  * Main application coordinator view combining the workspace control room,
@@ -19,15 +20,10 @@ export function ControlRoom({ initialSession, onNew }) {
   const [activeView, setActiveView] = useState('control');
   const { session, error, submittingDecision, handleReviewDecision } = useProcurementSession(initialSession);
 
-  const statusBannerText = useMemo(() => {
-    if (session.currentState === 'ACCEPTED') {
-      return 'Procurement complete';
-    }
-    if (session.currentState === 'HUMAN_REVIEW') {
-      return 'Waiting for approval';
-    }
-    return 'Agent is negotiating';
-  }, [session.currentState]);
+  const statusInfo = useMemo(
+    () => getSessionStatusInfo(session.currentState),
+    [session.currentState]
+  );
 
   return (
     <div className="app-shell">
@@ -62,9 +58,9 @@ export function ControlRoom({ initialSession, onNew }) {
           <div className="workspace-content">
             <div className="main-column">
               {/* Active state live indicator */}
-              <div className="run-banner">
+              <div className={`run-banner ${statusInfo.tone}`}>
                 <div>
-                  <span className="live-dot" /> {statusBannerText}
+                  <span className={`live-dot ${statusInfo.tone}`} /> {statusInfo.bannerText}
                 </div>
                 <span className="muted">Session {session.id.slice(0, 8)}</span>
               </div>
@@ -80,6 +76,22 @@ export function ControlRoom({ initialSession, onNew }) {
                     <p>
                       {session.humanReview?.reason ||
                         'An agent proposal was held by safety verification for human sign-off.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Agent Failure Callout Banner */}
+              {session.currentState === 'FAILED' && (
+                <div className="failure-callout-banner">
+                  <div className="failure-callout-icon">
+                    <AlertCircle size={18} />
+                  </div>
+                  <div className="failure-callout-text">
+                    <strong>Agent failed — stopped safely</strong>
+                    <p>
+                      {session.stopReason ||
+                        'The agent encountered an unexpected failure during negotiation.'}
                     </p>
                   </div>
                 </div>

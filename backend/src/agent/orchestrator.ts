@@ -390,12 +390,13 @@ async function getOfferWithRecovery(
       }
     } catch (error) {
       if (attempt === 1) {
+        const errorMsg = error instanceof Error ? error.message : 'Vendor response failed.';
         emitEvent(
           session,
           'AGENT_FAILED',
           'FAILED',
-          `Vendor ${vendor.name} could not provide a usable response.`,
-          { vendorId: vendor.id }
+          `Vendor ${vendor.name} could not provide a usable response: ${errorMsg}`,
+          { vendorId: vendor.id, error: errorMsg }
         );
         return null;
       }
@@ -967,14 +968,18 @@ export async function runSession(
     finalizeSession(session);
   } catch (error) {
     if (session.currentState !== 'STOPPED') {
-      session.stopReason =
+      const errorMessage =
         error instanceof Error ? error.message : 'Unexpected agent failure.';
+      session.stopReason = errorMessage;
       emitEvent(
         session,
         'AGENT_FAILED',
         'FAILED',
-        'Agent stopped safely after an unexpected failure.',
-        { error: 'Unexpected agent failure.' }
+        `Agent stopped safely: ${errorMessage}`,
+        {
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+        }
       );
     }
   }

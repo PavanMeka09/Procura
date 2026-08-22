@@ -241,6 +241,8 @@ Return only a concise structured JSON object matching the action schema. Never a
 Context:
 ${buildPromptContext(session, offer)}`;
 
+  let primaryError: string | null = null;
+
   // 1. Try Primary Google Gemini Provider (up to 2 attempts)
   if (config.googleApiKey) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -275,6 +277,8 @@ ${buildPromptContext(session, offer)}`;
           fallbackUsed: false,
         };
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        primaryError = errorMsg;
         runs.push({
           model: config.primaryModel,
           role: 'NEGOTIATOR',
@@ -282,12 +286,17 @@ ${buildPromptContext(session, offer)}`;
           retryCount: attempt,
           fallback: false,
           success: false,
+          error: errorMsg,
         });
 
         if (attempt === 0) continue;
       }
     }
+  } else {
+    primaryError = 'GEMINI_API_KEY is not configured';
   }
+
+  let fallbackError: string | null = null;
 
   // 2. Fallback to OpenRouter Provider
   if (config.openRouterApiKey) {
@@ -321,7 +330,9 @@ ${buildPromptContext(session, offer)}`;
         runs,
         fallbackUsed: true,
       };
-    } catch {
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      fallbackError = errorMsg;
       runs.push({
         model: config.fallbackModel,
         role: 'FALLBACK',
@@ -329,11 +340,19 @@ ${buildPromptContext(session, offer)}`;
         retryCount: 0,
         fallback: true,
         success: false,
+        error: errorMsg,
       });
     }
+  } else {
+    fallbackError = 'OPENROUTER_API_KEY is not configured';
   }
 
-  throw new ModelError('Both primary negotiator and fallback model failed.');
+  const failureReasons = [
+    `Primary [${config.primaryModel}]: ${primaryError || 'unknown'}`,
+    `Fallback [${config.fallbackModel}]: ${fallbackError || 'unknown'}`,
+  ].join(' | ');
+
+  throw new ModelError(`Both primary and fallback models failed. Details: ${failureReasons}`);
 }
 
 /**
@@ -348,11 +367,12 @@ export async function critique(
   run: NegotiationSession['modelRuns'][number];
 }> {
   if (!config.googleApiKey) {
-    throw new CriticError('Critic provider is not configured.');
+    throw new CriticError('Critic provider is not configured: GEMINI_API_KEY is missing.');
   }
 
   const prompt = `You are an independent procurement critic. Do not negotiate or rewrite the action. Decide whether it is safe to allow given the evidence. ${buildPromptContext(session, offer)} Proposed action: ${JSON.stringify(action)}`;
 
+  let lastCriticError = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const startTime = Date.now();
     try {
@@ -381,14 +401,15 @@ export async function critique(
             : undefined,
         },
       };
-    } catch {
+    } catch (error) {
+      lastCriticError = error instanceof Error ? error.message : String(error);
       if (attempt === 1) {
-        throw new CriticError('Independent critic failed after retry.');
+        throw new CriticError(`Independent critic failed after retry [${config.criticModel}]: ${lastCriticError}`);
       }
     }
   }
 
-  throw new CriticError('Independent critic failed.');
+  throw new CriticError(`Independent critic failed [${config.criticModel}]: ${lastCriticError || 'unknown error'}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import React from 'react';
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   Check,
   FileText,
@@ -204,6 +205,30 @@ export function VerificationRail({ session, onReview, submittingDecision }) {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Agent failure diagnostic callout */}
+      {session.currentState === 'FAILED' && (
+        <section className="panel failure-rail-panel">
+          <div className="panel-heading failure-rail-heading">
+            <h3>
+              <AlertCircle size={17} color="var(--red)" /> Agent failure
+            </h3>
+            <StatusBadge tone="danger">Failed</StatusBadge>
+          </div>
+          <div className="failure-rail-content">
+            <strong>Stop reason</strong>
+            <div className="failure-rail-reason">
+              {session.stopReason || 'Unexpected agent failure.'}
+            </div>
+            <div className="failure-rail-tips">
+              <strong>Diagnostics & next steps:</strong>
+              <div>• Check backend console logs and AI provider API key status.</div>
+              <div>• If using Gemini/OpenRouter, verify quota & rate limits.</div>
+              <div>• Click &ldquo;New procurement&rdquo; in the sidebar to retry.</div>
             </div>
           </div>
         </section>

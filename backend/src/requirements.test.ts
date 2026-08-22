@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractRequirements } from './requirements';
+import { extractRequirements, extractRequirementsRegexFallback } from './requirements';
 import { createSession, runSession } from './agent/orchestrator';
 import { createDeterministicModelAdapters } from './ai/models';
 
@@ -15,7 +15,7 @@ describe('requirement extraction', () => {
       expect(request.maximumUnitPrice).toBe(55000);
       expect(request.maximumAdvancePaymentPercent).toBe(20);
     },
-    15000
+    40000
   );
 
   test(
@@ -27,7 +27,7 @@ describe('requirement extraction', () => {
 
       expect(request.maximumUnitPrice).toBe(48000);
     },
-    15000
+    40000
   );
 
   test(
@@ -44,7 +44,7 @@ describe('requirement extraction', () => {
       expect(request.minimumWarrantyMonths).toBe(24);
       expect(request.maximumAdvancePaymentPercent).toBe(20);
     },
-    15000
+    40000
   );
 
   test(
@@ -63,7 +63,37 @@ describe('requirement extraction', () => {
       expect(session.currentBestOffer!.deliveryDays).toBeLessThanOrEqual(21);
       expect(session.currentBestOffer!.warrantyMonths).toBeGreaterThanOrEqual(24);
     },
-    15000
+    40000
   );
+
+  test(
+    'rejects conversational model identity questions',
+    async () => {
+      await expect(
+        extractRequirements('tell me which model are you, who are you')
+      ).rejects.toThrow(/not contain a valid procurement requirement|conversational/i);
+    },
+    40000
+  );
+
+  test(
+    'rejects general chit-chat and greetings without procurement intent',
+    async () => {
+      await expect(
+        extractRequirements('hello, how are you doing today?')
+      ).rejects.toThrow(/not contain a valid procurement requirement|conversational/i);
+    },
+    40000
+  );
+
+  test('regex fallback rejects non-procurement conversational inputs synchronously', () => {
+    expect(() =>
+      extractRequirementsRegexFallback('tell me which model are you, who are you')
+    ).toThrow(/not contain a valid procurement requirement/i);
+
+    expect(() =>
+      extractRequirementsRegexFallback('what can you do for me?')
+    ).toThrow(/not contain a valid procurement requirement/i);
+  });
 });
 

@@ -4,6 +4,7 @@ import React from 'react';
 import { Clock3, Laptop } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
 import { Metric } from '../common/Metric';
+import { getSessionStatusInfo } from '../../lib/status-helpers';
 
 function formatCurrency(amount) {
   if (amount == null) return '—';
@@ -20,18 +21,7 @@ function formatTime(isoString) {
  */
 export function RequestHeader({ session }) {
   const request = session.originalRequest;
-  const isFinalAccepted = session.currentState === 'ACCEPTED';
-  const isUnderHumanReview = session.currentState === 'HUMAN_REVIEW';
-
-  const badgeTone = isFinalAccepted
-    ? 'success'
-    : isUnderHumanReview
-    ? 'warning'
-    : 'blue';
-
-  const badgeLabel = isFinalAccepted
-    ? 'FINAL ACCEPTED'
-    : session.currentState.replace(/_/g, ' ');
+  const { tone: badgeTone, badgeLabel } = getSessionStatusInfo(session.currentState);
 
   return (
     <section className="request-header panel">

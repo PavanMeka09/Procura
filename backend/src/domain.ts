@@ -205,6 +205,7 @@ export interface ModelRun {
     inputTokens?: number;
     outputTokens?: number;
   };
+  error?: string;
 }
 
 export interface ToolExecution {

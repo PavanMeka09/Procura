@@ -3,29 +3,11 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ArrowDown, Radio } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge';
+import { resolveTimelineEventTone as resolveEventTone } from '../../lib/status-helpers';
 
 function formatTime(isoString) {
   if (!isoString) return '—';
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function resolveEventTone(eventType, event) {
-  if (eventType === 'CRITIC_RESULT') {
-    const decision = event?.metadata?.decision;
-    if (decision === 'PASS') return 'success';
-    if (decision === 'WARN') return 'warning';
-    return 'danger';
-  }
-
-  if (['DEAL_ACCEPTED', 'POLICY_RESULT'].includes(eventType)) {
-    return 'success';
-  }
-
-  if (['ACTION_BLOCKED', 'HUMAN_REVIEW_REQUIRED'].includes(eventType)) {
-    return 'warning';
-  }
-
-  return 'blue';
 }
 
 /**
@@ -143,6 +125,11 @@ export function NegotiationTimeline({ session }) {
                     )}
                   </div>
                   <p>{event.message}</p>
+                  {event.metadata?.error && (
+                    <div className="timeline-error-box">
+                      <strong>Reason:</strong> {event.metadata.error}
+                    </div>
+                  )}
                 </div>
               </div>
             );
