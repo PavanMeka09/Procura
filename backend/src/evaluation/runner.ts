@@ -44,7 +44,7 @@ export async function runEvaluation(
   for (const [index, testCase] of evaluationCases.entries()) {
     let passed = false;
     const details: string[] = [];
-    const request = extractRequirements(testCase.input);
+    const request = await extractRequirements(testCase.input);
 
     if (testCase.scenarioConfig.kind === 'policy') {
       const policy = validateOffer(createViolationOffer(index % 4), request);

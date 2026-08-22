@@ -64,6 +64,11 @@ const procurementBodySchema = z
   .strict();
 
 const decisionSchema = z.enum(['approve', 'reject', 'stop']);
+const DECISION_STATUS_MAP: Record<z.infer<typeof decisionSchema>, 'APPROVED' | 'REJECTED' | 'STOPPED'> = {
+  approve: 'APPROVED',
+  reject: 'REJECTED',
+  stop: 'STOPPED',
+};
 const evaluationBodySchema = z.object({
   mode: z.enum(['provider', 'test-adapter']).default('test-adapter'),
 });
@@ -149,7 +154,7 @@ server.get('/api/health', async () => ({
 server.post('/api/procurements', async (request, reply) => {
   try {
     const { rawRequest } = parseProcurementBody(request.body);
-    const parsedRequirements = extractRequirements(rawRequest);
+    const parsedRequirements = await extractRequirements(rawRequest);
     const record: StoredRequestRecord = {
       id: createId(),
       rawRequest,
@@ -417,12 +422,7 @@ server.post<{ Params: { id: string; decision: string } }>(
 
       // Handle duplicate decision idempotency
       if (review && review.status !== 'PENDING') {
-        const resolved =
-          decision === 'approve'
-            ? 'APPROVED'
-            : decision === 'reject'
-            ? 'REJECTED'
-            : 'STOPPED';
+        const resolved = DECISION_STATUS_MAP[decision];
 
         if (review.status !== resolved) {
           return reply.code(409).send({
@@ -438,12 +438,7 @@ server.post<{ Params: { id: string; decision: string } }>(
       }
 
       if (review) {
-        review.status =
-          decision === 'approve'
-            ? 'APPROVED'
-            : decision === 'reject'
-            ? 'REJECTED'
-            : 'STOPPED';
+        review.status = DECISION_STATUS_MAP[decision];
         review.resolvedAt = now();
         store.reviews.set(review.id, review);
         persistStoredApproval(session.id, review);

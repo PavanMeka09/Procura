@@ -1,5 +1,6 @@
 import { asc, eq, or } from 'drizzle-orm';
 import db from './index';
+import { config } from '../utils/config';
 import {
   agentEvents,
   evaluationCases,
