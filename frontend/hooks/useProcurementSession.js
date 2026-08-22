@@ -9,6 +9,7 @@ import { getProcurement, resolveReview, subscribeEvents } from '../lib/api';
 export function useProcurementSession(initialSession) {
   const [session, setSession] = useState(initialSession);
   const [error, setError] = useState('');
+  const [submittingDecision, setSubmittingDecision] = useState(null);
 
   const requestId = initialSession?.requestId;
 
@@ -56,8 +57,9 @@ export function useProcurementSession(initialSession) {
   // Handle human review actions (approve / reject / stop)
   const handleReviewDecision = useCallback(
     async (decision) => {
-      if (!requestId) return;
+      if (!requestId || submittingDecision) return;
       setError('');
+      setSubmittingDecision(decision);
       try {
         const result = await resolveReview(requestId, decision);
         if (result?.session) {
@@ -65,14 +67,17 @@ export function useProcurementSession(initialSession) {
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to submit review decision.');
+      } finally {
+        setSubmittingDecision(null);
       }
     },
-    [requestId]
+    [requestId, submittingDecision]
   );
 
   return {
     session,
     error,
+    submittingDecision,
     handleReviewDecision,
   };
 }

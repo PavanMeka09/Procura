@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { SidebarRail } from '../navigation/SidebarRail';
 import { RequestHeader } from './RequestHeader';
 import { BestOfferCard } from './BestOfferCard';
@@ -16,7 +17,7 @@ import { useProcurementSession } from '../../hooks/useProcurementSession';
  */
 export function ControlRoom({ initialSession, onNew }) {
   const [activeView, setActiveView] = useState('control');
-  const { session, error, handleReviewDecision } = useProcurementSession(initialSession);
+  const { session, error, submittingDecision, handleReviewDecision } = useProcurementSession(initialSession);
 
   const statusBannerText = useMemo(() => {
     if (session.currentState === 'ACCEPTED') {
@@ -69,6 +70,22 @@ export function ControlRoom({ initialSession, onNew }) {
                 <span className="muted">Session {session.id.slice(0, 8)}</span>
               </div>
 
+              {/* Human Review Main Banner Callout */}
+              {session.currentState === 'HUMAN_REVIEW' && (
+                <div className="human-review-callout-banner">
+                  <div className="callout-banner-icon">
+                    <ShieldAlert size={18} />
+                  </div>
+                  <div className="callout-banner-text">
+                    <strong>Human approval required</strong>
+                    <p>
+                      {session.humanReview?.reason ||
+                        'An agent proposal was held by safety verification for human sign-off.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Core negotiation panels */}
               <RequestHeader session={session} />
               <BestOfferCard session={session} />
@@ -82,6 +99,7 @@ export function ControlRoom({ initialSession, onNew }) {
             <VerificationRail
               session={session}
               onReview={handleReviewDecision}
+              submittingDecision={submittingDecision}
             />
           </div>
         )}

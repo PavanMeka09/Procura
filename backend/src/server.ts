@@ -2,7 +2,7 @@ import fastify from 'fastify';
 import cors from '@fastify/cors';
 import { z } from 'zod';
 import { extractRequirements } from './requirements';
-import { createSession, resumeSession, runSession } from './agent/orchestrator';
+import { createSession, rejectAndResumeSession, resumeSession, runSession } from './agent/orchestrator';
 import {
   appendEvent,
   cacheSession,
@@ -64,7 +64,15 @@ const procurementBodySchema = z
   .strict();
 
 const decisionSchema = z.enum(['approve', 'reject', 'stop']);
-const DECISION_STATUS_MAP: Record<z.infer<typeof decisionSchema>, 'APPROVED' | 'REJECTED' | 'STOPPED'> = {
+type ReviewDecision = z.infer<typeof decisionSchema>;
+
+const reviewParamsSchema = z.object({
+  id: idSchema,
+  decision: decisionSchema,
+});
+type ReviewParams = z.infer<typeof reviewParamsSchema>;
+
+const DECISION_STATUS_MAP: Record<ReviewDecision, 'APPROVED' | 'REJECTED' | 'STOPPED'> = {
   approve: 'APPROVED',
   reject: 'REJECTED',
   stop: 'STOPPED',
@@ -363,18 +371,17 @@ server.get<{ Params: { id: string } }>(
  * POST /api/procurements/:id/:decision
  * Handles human-in-the-loop decisions ('approve' | 'reject' | 'stop').
  */
-server.post<{ Params: { id: string; decision: string } }>(
+server.post<{ Params: ReviewParams }>(
   '/api/procurements/:id/:decision',
   async (request, reply) => {
-    const session = await getSession(request.params.id);
+    const { id, decision } = reviewParamsSchema.parse(request.params);
+    const session = await getSession(id);
     if (!session) {
       return reply.code(404).send({
         error: 'Procurement session not found.',
         code: 'NOT_FOUND',
       });
     }
-
-    const decision = decisionSchema.parse(request.params.decision);
 
     // Terminal sessions cannot be stopped
     if (
@@ -424,18 +431,17 @@ server.post<{ Params: { id: string; decision: string } }>(
       if (session.humanReview) {
         persistStoredApproval(session.id, session.humanReview);
       }
+    } else if (decision === 'reject') {
+      await rejectAndResumeSession(session.id);
     } else {
       session.currentState = 'STOPPED';
       session.pendingAction = null;
-      session.stopReason =
-        decision === 'reject'
-          ? 'Human rejected the proposed action.'
-          : 'Human stopped negotiation.';
+      session.stopReason = 'Human stopped negotiation.';
 
       appendEvent({
         id: createId(),
         sessionId: session.id,
-        type: decision === 'reject' ? 'HUMAN_REJECTED' : 'NEGOTIATION_STOPPED',
+        type: 'NEGOTIATION_STOPPED',
         state: 'STOPPED',
         message: session.stopReason,
         metadata: { reviewId: review?.id },

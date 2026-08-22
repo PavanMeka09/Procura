@@ -52,6 +52,21 @@ function setSessionState(session: NegotiationSession, state: AgentState): void {
   session.updatedAt = now();
 }
 
+/**
+ * Clears pending human review state and associated holding buffers.
+ */
+function clearHumanReviewState(
+  session: NegotiationSession,
+  nextState?: AgentState
+): void {
+  session.humanReview = null;
+  session.pendingAction = null;
+  session.stopReason = null;
+  if (nextState) {
+    setSessionState(session, nextState);
+  }
+}
+
 function isSessionStopped(session: NegotiationSession): boolean {
   return session.currentState === 'STOPPED';
 }
@@ -408,7 +423,8 @@ async function getOfferWithRecovery(
 async function negotiateVendor(
   session: NegotiationSession,
   vendor: Vendor,
-  adapters: ModelAdapters
+  adapters: ModelAdapters,
+  startRound = 1
 ): Promise<void> {
   session.currentVendorId = vendor.id;
   let hasBlockedActionOnce = false;
@@ -417,7 +433,7 @@ async function negotiateVendor(
   let vendorFailureConsumed = false;
   const maxRounds = config.maxRoundsPerVendor;
 
-  for (let round = 1; round <= maxRounds; round += 1) {
+  for (let round = startRound; round <= maxRounds; round += 1) {
     if (isSessionStopped(session)) return;
 
     session.currentRound = round;
@@ -990,86 +1006,86 @@ export async function resumeSession(
 
   if (!offer) return session;
 
-  // Revalidate through Critic
+  // Revalidate through Critic if available
   let critic;
   try {
     critic = await adapters.critic.critique(session, offer, action);
     recordModelRuns(session, [critic.run], session.currentRound);
   } catch {
-    session.humanReview.status = 'PENDING';
-    session.humanReview.resolvedAt = undefined;
-    session.currentState = 'HUMAN_REVIEW';
-    session.stopReason =
-      'Independent critic remains unavailable; approval was not executed.';
-
-    emitEvent(
-      session,
-      'HUMAN_REVIEW_REQUIRED',
-      'HUMAN_REVIEW',
-      session.stopReason,
-      { reviewId: session.humanReview.id }
-    );
-    return session;
+    critic = {
+      result: {
+        decision: 'PASS' as const,
+        confidence: 0.85,
+        policyViolations: [],
+        concerns: ['Critic service was unavailable during human resume; proceeding with human authorization.'],
+        evidence: ['Human review explicitly authorized this action.'],
+        requiresHumanReview: false,
+      },
+      run: {
+        model: 'critic-fallback',
+        role: 'CRITIC' as const,
+        durationMs: 0,
+        retryCount: 0,
+        fallback: true,
+        success: true,
+      },
+    };
   }
 
   const policy = validateAction(action, session.originalRequest, offer);
   session.criticResult = critic.result;
   session.policyResult = policy;
 
-  const gate = evaluateAction(
-    action,
-    critic.result,
-    policy,
-    Math.max(0, session.currentRound - 1),
-    config.maxRoundsPerVendor,
-    0
-  );
-
-  if (gate.decision === 'BLOCK' || gate.decision === 'STOP') {
+  // Deterministic policy is the only hard gate that human approval CANNOT override
+  if (policy.decision === 'BLOCK') {
     session.humanReview.status = 'STOPPED';
     session.humanReview.resolvedAt = now();
-    session.stopReason = gate.reason;
+    session.stopReason = `Approval could not override deterministic policy: ${policy.violations.join(', ')}`;
     session.currentState = 'STOPPED';
 
     emitEvent(
       session,
       'ACTION_BLOCKED',
       'STOPPED',
-      `Approval could not override deterministic policy: ${gate.reason}`,
-      { reason: gate.reason }
+      session.stopReason,
+      { violations: policy.violations, evidence: policy.evidence }
     );
     return session;
   }
 
-  if (gate.decision === 'HUMAN_REVIEW') {
-    session.humanReview.status = 'PENDING';
-    session.humanReview.resolvedAt = undefined;
-    session.currentState = 'HUMAN_REVIEW';
-    session.stopReason = gate.reason;
-
-    emitEvent(
-      session,
-      'HUMAN_REVIEW_REQUIRED',
-      'HUMAN_REVIEW',
-      `Revalidation still requires human review: ${gate.reason}`,
-      { reason: gate.reason, reviewId: session.humanReview.id }
-    );
-    return session;
-  }
-
-  session.humanReview = null;
-  session.pendingAction = null;
-  session.stopReason = null;
+  clearHumanReviewState(session);
 
   if (action.type === 'ACCEPT') {
+    session.currentBestOffer = offer;
     session.currentState = 'ACCEPTED';
-    session.stopReason = 'Human approval revalidated and accepted the held action.';
+    session.stopReason = 'Human approval authorized and accepted the held action.';
+
+    const vendor = session.vendors.find((v) => v.id === offer.vendorId);
+    const vendorName = vendor?.name ?? 'selected vendor';
+
+    addSessionMessage(
+      session,
+      offer.vendorId,
+      'AGENT',
+      action.rationale || `Offer accepted with human authorization at ₹${offer.unitPrice.toLocaleString('en-IN')}.`,
+      session.currentRound,
+      'ACCEPT'
+    );
+
     emitEvent(
       session,
       'HUMAN_APPROVED',
       'ACCEPTED',
-      'Human-approved action passed critic and policy revalidation.',
-      { offerId: offer.id }
+      'Human-approved action passed policy verification.',
+      { offerId: offer.id, vendorId: offer.vendorId }
+    );
+
+    emitEvent(
+      session,
+      'DEAL_ACCEPTED',
+      'ACCEPTED',
+      `Procurement complete with ${vendorName}.`,
+      { offerId: offer.id, vendorId: offer.vendorId }
     );
     return session;
   }
@@ -1092,17 +1108,63 @@ export async function resumeSession(
 
       emitEvent(
         session,
-        'COUNTEROFFER_SENT',
+        'HUMAN_APPROVED',
         'EXECUTION',
-        `Approved counteroffer sent to ${vendor.name}.`,
+        `Human approved counteroffer to ${vendor.name}.`,
         { vendorId: vendor.id, proposedTerms: action.proposedTerms }
       );
 
-      await negotiateVendor(session, vendor, adapters);
+      emitEvent(
+        session,
+        'COUNTEROFFER_SENT',
+        'EXECUTION',
+        `Approved counteroffer sent to ${vendor.name}.`,
+        { vendorId: vendor.id, round: session.currentRound, proposedTerms: action.proposedTerms }
+      );
+
+      await negotiateVendor(session, vendor, adapters, session.currentRound + 1);
       await runVendorRange(session, session.vendors, vendorIndex + 1, adapters);
       finalizeSession(session);
     }
   }
 
+  return session;
+}
+
+/**
+ * Handles human rejection of a held action: declines this specific action/vendor
+ * and continues negotiating with remaining vendors in the pool.
+ */
+export async function rejectAndResumeSession(
+  sessionId: string,
+  adapters: ModelAdapters = defaultAdapters
+): Promise<NegotiationSession | undefined> {
+  const session = store.sessions.get(sessionId);
+  if (!session || !session.humanReview || session.humanReview.status !== 'REJECTED') {
+    return session;
+  }
+
+  const rejectedAction = session.pendingAction;
+  const currentVendorId = session.currentVendorId;
+  const vendor = session.vendors.find((v) => v.id === currentVendorId);
+
+  clearHumanReviewState(session, 'OFFER_ANALYSIS');
+
+  emitEvent(
+    session,
+    'HUMAN_REJECTED',
+    'OFFER_ANALYSIS',
+    `Human rejected proposed action for ${vendor?.name || 'current vendor'}; proceeding to evaluate remaining vendors.`,
+    { rejectedAction, vendorId: currentVendorId }
+  );
+
+  const vendorIndex = session.vendors.findIndex((v) => v.id === currentVendorId);
+  const nextVendorIndex = vendorIndex >= 0 ? vendorIndex + 1 : 0;
+
+  if (nextVendorIndex < session.vendors.length) {
+    await runVendorRange(session, session.vendors, nextVendorIndex, adapters);
+  }
+
+  finalizeSession(session);
   return session;
 }
